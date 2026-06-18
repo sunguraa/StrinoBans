@@ -1,0 +1,16 @@
+{
+  "id": "papercut-bo1",
+  "name": "Papercut Series - Bo1",
+  "author": "idol_val",
+  "description": "Papercut Series Bo1 on a 7-map pool. Teams alternate bans until one map remains; the first mover picks the decider side.",
+  "updatedAt": "2026-06-17T00:00:00Z",
+  "format": "bo1",
+  "ruleset": "default",
+  "mapPool": ["area-88", "base-404", "cauchy-street", "cosmite", "le-brun-city", "ocarnus", "space-lab"],
+  "seededPick": false,
+  "pickBanTimerSeconds": 50,
+  "sideTimerSeconds": 35,
+  "timerEnforcement": "none",
+  "roomImportCode": "0WK8BZ",
+  "notes": "7-map pool: full Season 3 ranked pool minus windy-town (placeholder for the community-vote excluded map). bannedMap placeholder - TO should update via PR or contact sunguraa."
+}

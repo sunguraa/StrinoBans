@@ -1,0 +1,16 @@
+{
+  "id": "default-bo1",
+  "name": "Default — Bo1",
+  "author": "sunguraa",
+  "description": "Single map. Teams alternate bans down to one decider; the team that didn't ban last picks side.",
+  "updatedAt": "2026-06-16T00:00:00Z",
+  "format": "bo1",
+  "ruleset": "default",
+  "mapPool": ["area-88", "base-404", "cauchy-street", "cosmite", "le-brun-city", "ocarnus", "space-lab", "windy-town"],
+  "seededPick": false,
+  "pickBanTimerSeconds": 50,
+  "sideTimerSeconds": 35,
+  "timerEnforcement": "none",
+  "roomImportCode": "40GE0I",
+  "notes": "Port Euler excluded from Season 3 ranked pool."
+}

@@ -1,0 +1,16 @@
+{
+  "id": "default-bo7",
+  "name": "Default — Bo7",
+  "author": "sunguraa",
+  "description": "Best of 7 — six picks plus a decider, starting with picks to offset banning advantage.",
+  "updatedAt": "2026-06-16T00:00:00Z",
+  "format": "bo7",
+  "ruleset": "default",
+  "mapPool": ["area-88", "base-404", "cauchy-street", "cosmite", "le-brun-city", "ocarnus", "space-lab", "windy-town"],
+  "seededPick": false,
+  "pickBanTimerSeconds": 50,
+  "sideTimerSeconds": 35,
+  "timerEnforcement": "none",
+  "roomImportCode": "40GE0I",
+  "notes": "Port Euler excluded from Season 3 ranked pool. 1 ban + 6 picks = 7 maps touched, 1 decider. Starts with picks to offset banning team advantage."
+}

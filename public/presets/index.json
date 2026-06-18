@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "groups": [
+    {
+      "id": "default",
+      "name": "Default",
+      "author": "StrinoBans Team",
+      "description": "The standard StrinoBans ruleset - full 8-map Season 3 pool, alternating ban/pick with a coin flip for first mover. Pick the series length below.",
+      "updatedAt": "2026-06-17T00:00:00Z",
+      "stages": [
+        { "format": "bo1", "presetId": "default-bo1" },
+        { "format": "bo3", "presetId": "default-bo3" },
+        { "format": "bo5", "presetId": "default-bo5" },
+        { "format": "bo7", "presetId": "default-bo7" }
+      ]
+    },
+    {
+      "id": "papercut-series",
+      "name": "Papercut Series",
+      "author": "idol_val",
+      "description": "Papercut Series ruleset by idol_val. Uses a 7-map pool (one map excluded via community vote - currently placeholder is windy-town; TOs should update). Bo1, Bo3, and Bo5 stages.",
+      "updatedAt": "2026-06-17T00:00:00Z",
+      "stages": [
+        { "format": "bo1", "presetId": "papercut-bo1" },
+        { "format": "bo3", "presetId": "papercut-bo3" },
+        { "format": "bo5", "presetId": "papercut-bo5" }
+      ]
+    }
+  ]
+}

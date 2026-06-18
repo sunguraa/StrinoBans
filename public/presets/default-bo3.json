@@ -1,0 +1,16 @@
+{
+  "id": "default-bo3",
+  "name": "Default — Bo3",
+  "author": "sunguraa",
+  "description": "Best of 3 — two picks plus a decider, bans trim the pool. Coin flip sets first mover.",
+  "updatedAt": "2026-06-16T00:00:00Z",
+  "format": "bo3",
+  "ruleset": "default",
+  "mapPool": ["area-88", "base-404", "cauchy-street", "cosmite", "le-brun-city", "ocarnus", "space-lab", "windy-town"],
+  "seededPick": false,
+  "pickBanTimerSeconds": 50,
+  "sideTimerSeconds": 35,
+  "timerEnforcement": "none",
+  "roomImportCode": "40GE0I",
+  "notes": "Port Euler excluded from Season 3 ranked pool. 5 bans + 2 picks = 7 maps touched, 1 decider."
+}
