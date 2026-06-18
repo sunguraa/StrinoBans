@@ -11,7 +11,7 @@ interface CoinFlipProps {
   coinFlip: CoinFlipResult | null;
   seededPick?: boolean;
   role: Team | 'spectator';
-  onChooseFirstActor?: (firstActor: Team) => void;
+  onChooseFirstActor?: (firstActor: Team) => void;  // seededPick mode only
   onRevealComplete?: () => void;
 }
 
@@ -66,7 +66,10 @@ export function CoinFlip({
     if (phase === 'waiting') {
       setPhase('settling');
       const t1 = setTimeout(() => setPhase('revealed'), SETTLE_MS);
-      const t2 = setTimeout(() => onRevealRef.current?.(), SETTLE_MS + HOLD_MS);
+      // When choice is pending the board takes over — transition faster so the
+      // interactive UI appears promptly. Otherwise hold the result on screen.
+      const holdMs = coinFlip.choicePending ? 800 : HOLD_MS;
+      const t2 = setTimeout(() => onRevealRef.current?.(), SETTLE_MS + holdMs);
       return () => {
         clearTimeout(t1);
         clearTimeout(t2);
@@ -118,7 +121,6 @@ export function CoinFlip({
   const restTransform = `rotateY(${1440 + (winner === 'b' ? 180 : 0)}deg)`;
 
   const spinning = phase === 'settling';
-
   return (
     <Card className="flex w-full max-w-md flex-col items-center gap-5 p-8 text-center">
       <h2 className="font-serif text-2xl font-medium">Coin Flip</h2>
@@ -145,19 +147,32 @@ export function CoinFlip({
         </div>
       </div>
 
-      <div className="h-12">
+      <div className="min-h-12 h-auto w-full">
         {phase === 'revealed' && coinFlip ? (
-          <div className="space-y-1" aria-live="polite">
-            <div className="text-xl font-semibold">
-              {winner === 'a' ? teamNames.a : teamNames.b}{' '}
-              <span className="text-muted-foreground">goes first</span>
+          coinFlip.choicePending ? (
+            // Choice is pending — show brief result only; choice UI lives in the board
+            <div className="space-y-1" aria-live="polite">
+              <div className="text-xl font-semibold">
+                {coinFlip.flipWinner === 'a' ? teamNames.a : teamNames.b}{' '}
+                <span className="text-muted-foreground">won the flip</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Choosing first mover…</p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {coinFlip.method === 'seeded-pick'
-                ? 'Seeded — chosen by Team A'
-                : 'Random coin flip'}
-            </p>
-          </div>
+          ) : (
+            <div className="space-y-1" aria-live="polite">
+              <div className="text-xl font-semibold">
+                {winner === 'a' ? teamNames.a : teamNames.b}{' '}
+                <span className="text-muted-foreground">goes first</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {coinFlip.method === 'seeded-pick'
+                  ? 'Seeded — chosen by Team A'
+                  : coinFlip.method === 'choose-team'
+                    ? `Choose Team — picked by ${coinFlip.flipWinner === 'a' ? teamNames.a : teamNames.b}`
+                    : 'Random coin flip'}
+              </p>
+            </div>
+          )
         ) : (
           <p className="text-sm text-muted-foreground" aria-live="polite">
             Flipping for first mover…

@@ -2,7 +2,7 @@
   "id": "papercut-bo3",
   "name": "Papercut Series - Bo3",
   "author": "idol_val",
-  "description": "Papercut Series Bo3 on a 7-map pool. A ban, B ban, A pick (B side), B pick (A side), A ban, B ban, then the first mover picks side on the decider.",
+  "description": "Papercut Series Bo3 on a 7-map pool. A coin flip is held and its winner chooses who moves first, then: A ban, B ban, A pick (B side), B pick (A side), A ban, B ban, then the first mover picks side on the decider.",
   "updatedAt": "2026-06-17T00:00:00Z",
   "format": "bo3",
   "ruleset": "default",
@@ -16,6 +16,7 @@
     "space-lab"
   ],
   "seededPick": false,
+  "coinFlipMode": "choose-team",
   "pickBanTimerSeconds": 50,
   "sideTimerSeconds": 35,
   "timerEnforcement": "random-after-timeout",

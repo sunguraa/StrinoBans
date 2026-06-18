@@ -110,13 +110,13 @@ export function VetoRoom() {
   const showBoard = session.coinFlip !== null && (coinRevealed || vetoStarted);
   const showCoinFlip = bothReady && !showBoard;
   const isMyTurn = session.vetoState.currentTeam === session.role;
+  const choicePending = !!session.coinFlip?.choicePending;
 
   // Share availability:
   //  - Setup phase (before the coin flip): host only, and sees all three links.
   //  - After the coin flip: everyone can share, but only their own team + spectator.
   const setupPhase = session.coinFlip === null;
-  const canShare =
-    !!session.shareLinks && !session.vetoState.isComplete && (setupPhase ? session.isHost : true);
+  const canShare = !!session.shareLinks && !session.vetoState.isComplete;
   const shareShowAll = setupPhase && session.isHost;
   const shareButton = canShare ? (
     <Button
@@ -174,6 +174,8 @@ export function VetoRoom() {
               readyState={session.readyState}
               onTeamNameChange={handleTeamNameChange}
               onReadyToggle={handleReadyToggle}
+              isHost={session.isHost}
+              links={session.shareLinks}
             />
           </div>
         )}
@@ -229,26 +231,55 @@ export function VetoRoom() {
               </span>
             </div>
 
-            <ActionBar
-              currentStepIndex={session.vetoState.currentStepIndex}
-              currentStep={session.vetoState.currentStep}
-              isMyTurn={isMyTurn}
-              selectedMapId={session.selectedMapId}
-              teamNames={session.teamNames}
-              pickBanSeconds={Math.max(30, session.meta?.pickBanTimerSeconds ?? 50)}
-              sideSeconds={Math.max(20, session.meta?.sideTimerSeconds ?? 35)}
-              timerEnforcement={session.meta?.timerEnforcement ?? "none"}
-              onConfirm={() => session.selectedMapId && session.submitMapAction(session.selectedMapId)}
-              onTimeout={handleTimeout}
-              onSide={session.submitSide}
-            />
+            {choicePending ? (
+              <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 md:flex-row md:items-center md:justify-between">
+                <p className="flex-1 text-sm font-medium">
+                  {session.role === session.coinFlip?.flipWinner
+                    ? "You won the coin flip! Choose who goes first:"
+                    : `Waiting for ${session.coinFlip?.flipWinner === "a" ? session.teamNames.a : session.teamNames.b} to choose…`}
+                </p>
+                {session.role === session.coinFlip?.flipWinner && (
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => session.chooseSeededFirstActor("a")}
+                      aria-label={`${session.teamNames.a} goes first`}
+                    >
+                      {session.teamNames.a} First
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => session.chooseSeededFirstActor("b")}
+                      aria-label={`${session.teamNames.b} goes first`}
+                    >
+                      {session.teamNames.b} First
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <ActionBar
+                currentStepIndex={session.vetoState.currentStepIndex}
+                currentStep={session.vetoState.currentStep}
+                isMyTurn={isMyTurn}
+                selectedMapId={session.selectedMapId}
+                teamNames={session.teamNames}
+                pickBanSeconds={Math.max(30, session.meta?.pickBanTimerSeconds ?? 50)}
+                sideSeconds={Math.max(20, session.meta?.sideTimerSeconds ?? 35)}
+                timerEnforcement={session.meta?.timerEnforcement ?? "none"}
+                onConfirm={() => session.selectedMapId && session.submitMapAction(session.selectedMapId)}
+                onTimeout={handleTimeout}
+                onSide={session.submitSide}
+              />
+            )}
 
             <MapGrid
               mapPool={session.meta?.mapPool ?? []}
               vetoState={session.vetoState}
               selectedMapId={session.selectedMapId}
               role={session.role}
-              isMyTurn={isMyTurn}
+              isMyTurn={isMyTurn && !choicePending}
               currentStepType={session.vetoState.currentActionType}
               intents={myTeamIntents}
               onSelectMap={session.selectMap}
@@ -262,6 +293,8 @@ export function VetoRoom() {
               currentStepIndex={session.vetoState.currentStepIndex}
               teamNames={session.teamNames}
               coinFlip={session.coinFlip}
+              customSteps={session.meta?.steps}
+              choicePending={choicePending}
             />
           </div>
         )}

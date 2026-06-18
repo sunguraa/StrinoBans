@@ -12,6 +12,8 @@ interface SequenceTimelineProps {
   currentStepIndex: number;
   teamNames: Record<Team, string>;
   coinFlip: CoinFlipResult | null;
+  customSteps?: { team: "a" | "b"; type: "ban" | "pick" | "side"; forPickIndex?: number; forDecider?: boolean }[];
+  choicePending?: boolean;
 }
 
 const TAG_STYLES: Record<string, string> = {
@@ -27,10 +29,16 @@ export function SequenceTimeline({
   currentStepIndex,
   teamNames,
   coinFlip,
+  customSteps,
+  choicePending,
 }: SequenceTimelineProps) {
-  const steps = getFormatSteps(format, mapPool.length, coinFlip?.winner ?? null);
+  const steps = getFormatSteps(format, mapPool.length, coinFlip?.winner ?? null, customSteps);
   const actionByStep = new Map(actions.map((a) => [a.stepIndex, a]));
   const mapName = (id?: string) => MAP_POOL.find((m) => m.id === id)?.name ?? id ?? "—";
+  // Before the flip winner has chosen first mover, A/B don't map to real names yet
+  const displayNames: Record<Team, string> = choicePending
+    ? { a: "Team A", b: "Team B" }
+    : teamNames;
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -47,7 +55,7 @@ export function SequenceTimeline({
           const action = actionByStep.get(index);
           const isCurrent = index === currentStepIndex;
           const done = action !== undefined && !isCurrent;
-          const teamName = step.team === "a" ? teamNames.a : teamNames.b;
+          const teamName = step.team === "a" ? displayNames.a : displayNames.b;
           const detail = action
             ? step.type === "side"
               ? action.side

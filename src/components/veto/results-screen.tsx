@@ -58,7 +58,7 @@ export function ResultsScreen({
   const copyImage = async () => {
     try {
       const result = await copyVetoResultImage(
-        buildResultImageData({ vetoState, actions, teamNames, format }),
+        buildResultImageData({ vetoState, actions, teamNames, format, roomImportCode }),
       );
       setImageState(result);
       setTimeout(() => setImageState("idle"), 1800);
@@ -90,6 +90,14 @@ export function ResultsScreen({
     sidePickedBy: p.sidePickedBy,
     isDecider: false,
   }));
+
+  // Build map of banned map -> team that banned it
+  const bannedByMap = new Map<string, Team>();
+  actions.forEach((action) => {
+    if (action.type === "ban" && action.mapId) {
+      bannedByMap.set(action.mapId, action.team);
+    }
+  });
 
   if (vetoState.deciderMap) {
     const deciderSide = actions.find(
@@ -166,7 +174,7 @@ export function ResultsScreen({
                 </div>
                 <div className="truncate text-xs text-muted-foreground">
                   {m.isDecider
-                    ? "Last map standing"
+                    ? `Last map standing${m.sidePickedBy ? ` — Side chosen by ${teamName(m.sidePickedBy)}` : ""}`
                     : m.pickedBy
                       ? `Picked by ${teamName(m.pickedBy)}`
                       : ""}
@@ -200,14 +208,21 @@ export function ResultsScreen({
             Banned
           </h3>
           <div className="flex flex-wrap gap-1.5">
-            {vetoState.bannedMaps.map((id) => (
-              <span
-                key={id}
-                className="rounded bg-ban/10 px-2 py-0.5 text-xs text-muted-foreground line-through"
-              >
-                {mapName(id)}
-              </span>
-            ))}
+            {vetoState.bannedMaps.map((id) => {
+              const banner = bannedByMap.get(id);
+              return (
+                <span
+                  key={id}
+                  className="rounded bg-ban/10 px-2 py-0.5 text-xs text-muted-foreground"
+                  title={banner ? `Banned by ${teamName(banner)}` : undefined}
+                >
+                  <span className="line-through">{mapName(id)}</span>
+                  {banner && (
+                    <span className="ml-1 font-mono text-[9px] text-ban">(by {teamName(banner).slice(0, 8)})</span>
+                  )}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}

@@ -11,6 +11,8 @@ export interface PresetMeta {
 export interface VetoPreset extends PresetMeta {
   mapPool: string[];
   seededPick?: boolean;
+  coinFlipMode?: 'random' | 'seeded' | 'choose-team';
+  steps?: { team: 'a' | 'b'; type: 'ban' | 'pick' | 'side'; forPickIndex?: number; forDecider?: boolean }[];
   pickBanTimerSeconds?: number | null;
   sideTimerSeconds?: number | null;
   timerEnforcement?: 'none' | 'random-after-timeout';

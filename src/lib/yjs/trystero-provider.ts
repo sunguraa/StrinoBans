@@ -23,7 +23,6 @@ const TRYSTERO_SYNC_ACTION = "yjs-sync";
 const TRYSTERO_AWARENESS_ACTION = "yjs-awareness-update";
 const DEFAULT_TRYSTERO_APP_ID = "strinobans-collab";
 const DEFAULT_TRYSTERO_RELAYS = [
-  "wss://relay.damus.io",
   "wss://nos.lol",
   "wss://relay.nostr.band",
 ];

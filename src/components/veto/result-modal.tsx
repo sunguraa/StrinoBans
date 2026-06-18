@@ -49,6 +49,15 @@ export function ResultModal({ summary, onClose }: { summary: SessionSummary; onC
   const playedIds = new Set(summary.finalResult.map((r) => r.mapId));
   const banned = summary.mapPool.filter((id) => !playedIds.has(id));
 
+  const bannedByMap = new Map<string, "a" | "b" | string>();
+  if (summary.actions) {
+    summary.actions.forEach((action) => {
+      if (action.type === "ban" && action.mapId) {
+        bannedByMap.set(action.mapId, action.team);
+      }
+    });
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -103,7 +112,9 @@ export function ResultModal({ summary, onClose }: { summary: SessionSummary; onC
                     )}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">
-                    {isDecider ? "Last map standing" : pickedByName ? `Picked by ${pickedByName}` : ""}
+                    {isDecider
+                      ? `Last map standing${r.sidePickedBy ? ` — Side chosen by ${r.sidePickedBy === "a" ? summary.teamAName : summary.teamBName}` : ""}`
+                      : pickedByName ? `Picked by ${pickedByName}` : ""}
                   </div>
                   {teamASide && teamBSide && (
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -123,11 +134,22 @@ export function ResultModal({ summary, onClose }: { summary: SessionSummary; onC
               Banned
             </h3>
             <div className="flex flex-wrap gap-1.5">
-              {banned.map((id) => (
-                <span key={id} className="rounded bg-ban/10 px-2 py-0.5 text-xs text-muted-foreground line-through">
-                  {mapName(id)}
-                </span>
-              ))}
+              {banned.map((id) => {
+                const banner = bannedByMap.get(id);
+                const bannerName = banner === "a" ? summary.teamAName : banner === "b" ? summary.teamBName : undefined;
+                return (
+                  <span
+                    key={id}
+                    className="rounded bg-ban/10 px-2 py-0.5 text-xs text-muted-foreground"
+                    title={bannerName ? `Banned by ${bannerName}` : undefined}
+                  >
+                    <span className="line-through">{mapName(id)}</span>
+                    {bannerName && (
+                      <span className="ml-1 font-mono text-[9px] text-ban">(by {bannerName.slice(0, 8)})</span>
+                    )}
+                  </span>
+                );
+              })}
             </div>
           </div>
         )}

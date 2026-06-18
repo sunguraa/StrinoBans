@@ -49,12 +49,12 @@ export function TeamPanel({
             type="text"
             value={name}
             onChange={(e) => onNameChange?.(e.target.value)}
-            placeholder={`${label} name`}
+            placeholder="Enter team name"
             aria-label={`${label} name`}
             className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
         ) : (
-          <span className="flex-1 truncate text-lg font-semibold">{name || label}</span>
+          <span className="flex-1 truncate text-lg font-semibold">{name}</span>
         )}
         {onReadyToggle && (
           <Button

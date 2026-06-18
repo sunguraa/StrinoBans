@@ -2,7 +2,7 @@
   "id": "papercut-bo1",
   "name": "Papercut Series - Bo1",
   "author": "idol_val",
-  "description": "Papercut Series Bo1 on a 7-map pool. Teams alternate bans until one map remains; the first mover picks the decider side.",
+  "description": "Papercut Series Bo1 on a 7-map pool. A coin flip is held and its winner chooses who moves first; teams then alternate bans until one map remains and the first mover picks the decider side.",
   "updatedAt": "2026-06-17T00:00:00Z",
   "format": "bo1",
   "ruleset": "default",
@@ -16,6 +16,7 @@
     "space-lab"
   ],
   "seededPick": false,
+  "coinFlipMode": "choose-team",
   "pickBanTimerSeconds": 50,
   "sideTimerSeconds": 35,
   "timerEnforcement": "random-after-timeout",

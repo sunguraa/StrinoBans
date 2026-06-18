@@ -45,6 +45,8 @@ export interface CoinFlipResult {
   method: string;
   seed: string;
   rolledAt: string;
+  flipWinner?: Team;
+  choicePending?: boolean;
 }
 
 export type BestOf = 1 | 3 | 5 | 7;
@@ -129,8 +131,11 @@ export function getFormatSteps(
   format: Format,
   mapCount?: number,
   coinFlipWinner?: Team | null,
+  customSteps?: VetoStep[],
 ): VetoStep[] {
-  const steps = generateSteps(bestOfForFormat(format), mapCount ?? 8);
+  const steps = customSteps && customSteps.length > 0
+    ? customSteps
+    : generateSteps(bestOfForFormat(format), mapCount ?? 8);
   if (coinFlipWinner === 'b') {
     return swapStepTeams(steps);
   }
@@ -142,8 +147,9 @@ export function deriveVetoState(
   mapPool: MapId[],
   actions: ConfirmedAction[],
   coinFlipWinner?: Team | null,
+  customSteps?: VetoStep[],
 ): VetoState {
-  const steps = getFormatSteps(format, mapPool.length, coinFlipWinner);
+  const steps = getFormatSteps(format, mapPool.length, coinFlipWinner, customSteps);
 
   const bannedMaps: MapId[] = [];
   const pickedMaps: PickedMap[] = [];
@@ -236,9 +242,10 @@ export function validateAction(
   actions: ConfirmedAction[],
   role: Team | 'spectator',
   coinFlipWinner?: Team | null,
+  customSteps?: VetoStep[],
 ): { valid: boolean; reason?: string } {
-  const steps = getFormatSteps(format, mapPool.length, coinFlipWinner);
-  const state = deriveVetoState(format, mapPool, actions, coinFlipWinner);
+  const steps = getFormatSteps(format, mapPool.length, coinFlipWinner, customSteps);
+  const state = deriveVetoState(format, mapPool, actions, coinFlipWinner, customSteps);
 
   if (role === 'spectator') {
     return { valid: false, reason: 'Spectators cannot take actions' };

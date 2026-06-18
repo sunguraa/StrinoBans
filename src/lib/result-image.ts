@@ -27,6 +27,7 @@ export interface ResultImageMap {
   /** "ATK" | "DEF" | null */
   teamASideLabel: string | null;
   teamBSideLabel: string | null;
+  sidePickedByLabel?: string | null;
 }
 
 export interface ResultImageData {
@@ -35,6 +36,7 @@ export interface ResultImageData {
   formatLabel: string;
   maps: ResultImageMap[];
   bannedNames: string[];
+  roomImportCode?: string;
 }
 
 function mapName(id: string): string {
@@ -79,7 +81,7 @@ const ROW_H = 84;
 const ROW_GAP = 10;
 
 export async function renderVetoResultImage(data: ResultImageData): Promise<Blob> {
-  const headerH = 92;
+  const headerH = data.roomImportCode ? 118 : 92;
   const bannedH = data.bannedNames.length > 0 ? 46 : 0;
   const footerH = 40;
   const bodyH = data.maps.length * ROW_H + Math.max(0, data.maps.length - 1) * ROW_GAP;
@@ -111,6 +113,13 @@ export async function renderVetoResultImage(data: ResultImageData): Promise<Blob
   ctx.fillStyle = COLORS.muted;
   ctx.font = "400 14px Inter, system-ui, sans-serif";
   ctx.fillText(`${data.formatLabel} · ${data.maps.length} map${data.maps.length === 1 ? "" : "s"} in play order`, PAD, PAD + 76);
+
+  // Room import code (if present)
+  if (data.roomImportCode) {
+    ctx.fillStyle = COLORS.accent;
+    ctx.font = "600 13px 'SF Mono', ui-monospace, monospace";
+    ctx.fillText(`Room: ${data.roomImportCode}`, PAD, PAD + 98);
+  }
 
   // Map rows
   const images = await Promise.all(data.maps.map((m) => loadImage(getCachedIntroPath(m.mapId))));
@@ -175,7 +184,12 @@ export async function renderVetoResultImage(data: ResultImageData): Promise<Blob
     // Picked by
     ctx.fillStyle = COLORS.muted;
     ctx.font = "400 13px Inter, system-ui, sans-serif";
-    ctx.fillText(m.isDecider ? "Last map standing" : m.pickedByName ? `Picked by ${m.pickedByName}` : "", textX, y + 50);
+    const pickerText = m.isDecider
+      ? `Last map standing${m.sidePickedByLabel ? ` · Side chosen by ${m.sidePickedByLabel}` : ""}`
+      : m.pickedByName
+        ? `Picked by ${m.pickedByName}`
+        : "";
+    ctx.fillText(pickerText, textX, y + 50);
 
     // Side tags
     if (m.teamASideLabel && m.teamBSideLabel) {
@@ -226,8 +240,9 @@ export function buildResultImageData(params: {
   actions: ConfirmedAction[];
   teamNames: Record<Team, string>;
   format: string;
+  roomImportCode?: string;
 }): ResultImageData {
-  const { vetoState, actions, teamNames, format } = params;
+  const { vetoState, actions, teamNames, format, roomImportCode } = params;
   const teamName = (t: Team) => (t === "a" ? teamNames.a : teamNames.b);
 
   const maps: ResultImageMap[] = vetoState.pickedMaps.map((p) => {
@@ -254,15 +269,23 @@ export function buildResultImageData(params: {
       isDecider: true,
       teamASideLabel: teamASide ? sideLabel(teamASide) : null,
       teamBSideLabel: teamBSide ? sideLabel(teamBSide) : null,
+      sidePickedByLabel: sidePickedBy ? teamName(sidePickedBy) : null,
     });
   }
+
+  const bannedNames = vetoState.bannedMaps.map((id) => {
+    const action = actions.find((a) => a.type === "ban" && a.mapId === id);
+    const banner = action ? teamName(action.team) : "";
+    return banner ? `${mapName(id)} (by ${banner.slice(0, 8)})` : mapName(id);
+  });
 
   return {
     teamAName: teamNames.a,
     teamBName: teamNames.b,
     formatLabel: formatLabel(format),
     maps,
-    bannedNames: vetoState.bannedMaps.map(mapName),
+    bannedNames,
+    roomImportCode,
   };
 }
 
@@ -284,10 +307,17 @@ export function buildResultImageDataFromSummary(summary: SessionSummary): Result
       isDecider,
       teamASideLabel: teamASide ? sideLabel(teamASide) : null,
       teamBSideLabel: teamBSide ? sideLabel(teamBSide) : null,
+      sidePickedByLabel: isDecider && sidePickedBy ? teamName(sidePickedBy) : null,
     };
   });
 
-  const bannedNames = summary.mapPool.filter((id) => !usedMaps.has(id)).map(mapName);
+  const bannedNames = summary.mapPool
+    .filter((id) => !usedMaps.has(id))
+    .map((id) => {
+      const action = summary.actions?.find((a) => a.type === "ban" && a.mapId === id);
+      const banner = action ? teamName(action.team) : "";
+      return banner ? `${mapName(id)} (by ${banner.slice(0, 8)})` : mapName(id);
+    });
 
   return {
     teamAName: summary.teamAName,

@@ -3,7 +3,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 
-export function Header({ leftSlot }: { leftSlot?: ReactNode } = {}) {
+interface HeaderProps {
+  onOpenHistory?: () => void;
+  leftSlot?: ReactNode;
+}
+
+export function Header({ onOpenHistory, leftSlot }: HeaderProps) {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [mounted, setMounted] = useState(false);
 
@@ -61,6 +66,16 @@ export function Header({ leftSlot }: { leftSlot?: ReactNode } = {}) {
         >
           Wiki
         </a>
+        {onOpenHistory && (
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Open match history"
+          >
+            History
+          </button>
+        )}
         <button
           type="button"
           onClick={toggleTheme}

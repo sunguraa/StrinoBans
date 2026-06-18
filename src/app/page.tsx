@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Header } from '@/components/layout/header';
 import { Branding } from '@/components/layout/branding';
@@ -39,6 +40,7 @@ export default function HomePage() {
   const [groups, setGroups] = useState<PresetGroup[]>([]);
   const [tab, setTab] = useState<'presets' | 'custom'>('presets');
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<VetoPreset | null>(null);
   const [customMaps, setCustomMaps] = useState<string[]>(
     MAP_POOL.map((m) => m.id)
@@ -88,13 +90,15 @@ export default function HomePage() {
       format: string;
       ruleset: string;
       seededPick: boolean;
+      coinFlipMode?: "random" | "seeded" | "choose-team";
+      steps?: { team: "a" | "b"; type: "ban" | "pick" | "side"; forPickIndex?: number; forDecider?: boolean }[];
       pickBanTimerSeconds: number | null;
       sideTimerSeconds: number | null;
-      timerEnforcement: 'none' | 'random-after-timeout';
+      timerEnforcement: "none" | "random-after-timeout";
       roomImportCode?: string;
     };
 
-    if (tab === 'presets') {
+    if (tab === "presets") {
       if (!selectedPresetId) return;
       const preset = await fetchPreset(selectedPresetId);
       if (!preset) return;
@@ -104,9 +108,11 @@ export default function HomePage() {
         format: preset.format,
         ruleset: preset.ruleset,
         seededPick: preset.seededPick ?? false,
+        coinFlipMode: preset.coinFlipMode ?? (preset.seededPick ? "seeded" : "random"),
+        steps: preset.steps,
         pickBanTimerSeconds: preset.pickBanTimerSeconds ?? null,
         sideTimerSeconds: preset.sideTimerSeconds ?? null,
-        timerEnforcement: preset.timerEnforcement ?? 'none',
+        timerEnforcement: preset.timerEnforcement ?? "none",
         roomImportCode: preset.roomImportCode ?? undefined,
       };
     } else {
@@ -207,43 +213,88 @@ export default function HomePage() {
                     Loading presets…
                   </p>
                 )}
-                {groups.map((group) => (
-                  <div
-                    key={group.id}
-                    className="rounded-lg border border-border bg-card p-4"
-                  >
-                    <div className="flex items-baseline justify-between gap-3">
-                      <h3 className="text-sm font-semibold">{group.name}</h3>
-                      <span className="text-[11px] text-muted-foreground">
-                        by {group.author}
-                      </span>
+                {groups.map((group) => {
+                  const expanded = expandedGroupId === group.id;
+                  const selectedStage = group.stages.find(
+                    (s) => s.presetId === selectedPresetId
+                  );
+                  return (
+                    <div
+                      key={group.id}
+                      className="overflow-hidden rounded-lg border border-border bg-card"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedGroupId(expanded ? null : group.id)
+                        }
+                        aria-expanded={expanded}
+                        aria-label={`${group.name} formats`}
+                        className="flex w-full items-start justify-between gap-3 p-4 text-left transition-colors hover:bg-secondary/40"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-baseline gap-2">
+                            <h3 className="text-sm font-semibold">
+                              {group.name}
+                            </h3>
+                            <span className="text-[11px] text-muted-foreground">
+                              by {group.author}
+                            </span>
+                          </div>
+                          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                            {group.description}
+                          </p>
+                          {selectedStage && !expanded && (
+                            <span className="mt-2 inline-block rounded-md border border-accent bg-accent/20 px-2 py-0.5 text-[11px] font-semibold text-foreground">
+                              {FORMAT_LABEL[selectedStage.format] ??
+                                selectedStage.format}{' '}
+                              selected
+                            </span>
+                          )}
+                        </div>
+                        <ChevronDown
+                          aria-hidden="true"
+                          className={cn(
+                            'mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-200',
+                            expanded && 'rotate-180'
+                          )}
+                        />
+                      </button>
+                      <div
+                        className={cn(
+                          'grid transition-[grid-template-rows] duration-200 ease-out',
+                          expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+                        )}
+                      >
+                        <div className="overflow-hidden">
+                          <div className="grid grid-cols-4 gap-2 px-4 pb-4">
+                            {group.stages.map((stage) => {
+                              const active = selectedPresetId === stage.presetId;
+                              return (
+                                <button
+                                  key={stage.presetId}
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedPresetId(stage.presetId)
+                                  }
+                                  aria-pressed={active}
+                                  aria-label={`${group.name} ${FORMAT_LABEL[stage.format] ?? stage.format}`}
+                                  className={`rounded-md border px-2 py-2 text-sm font-semibold transition-colors ${
+                                    active
+                                      ? 'border-accent bg-accent/20 text-foreground ring-1 ring-accent'
+                                      : 'border-border bg-secondary text-secondary-foreground hover:border-foreground/30'
+                                  }`}
+                                >
+                                  {FORMAT_LABEL[stage.format] ?? stage.format}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                      {group.description}
-                    </p>
-                    <div className="mt-3 grid grid-cols-4 gap-2">
-                      {group.stages.map((stage) => {
-                        const active = selectedPresetId === stage.presetId;
-                        return (
-                          <button
-                            key={stage.presetId}
-                            type="button"
-                            onClick={() => setSelectedPresetId(stage.presetId)}
-                            aria-pressed={active}
-                            aria-label={`${group.name} ${FORMAT_LABEL[stage.format] ?? stage.format}`}
-                            className={`rounded-md border px-2 py-2 text-sm font-semibold transition-colors ${
-                              active
-                                ? 'border-accent bg-accent/20 text-foreground ring-1 ring-accent'
-                                : 'border-border bg-secondary text-secondary-foreground hover:border-foreground/30'
-                            }`}
-                          >
-                            {FORMAT_LABEL[stage.format] ?? stage.format}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </TabsContent>
 
               <TabsContent value="custom" className="space-y-4">
@@ -291,6 +342,17 @@ export default function HomePage() {
                       );
                     })}
                   </div>
+                </div>
+                <div className="rounded-lg border border-border bg-card p-4 space-y-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                    Custom Presets & Rulesets
+                  </span>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Want to customize the pick/ban order (e.g., bans first, picks first), first-actor decision method (coin flip, seeded selection, or coin-flip choice), or enforce countdown timers?
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    You can easily define your own sequence using static JSON files with custom step flows. Check out the <a href="https://github.com/sunguraa/StrinoBans#presets" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline font-semibold">Preset JSON Guide</a> in the docs for format instructions.
+                  </p>
                 </div>
               </TabsContent>
             </Tabs>

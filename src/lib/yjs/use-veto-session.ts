@@ -136,7 +136,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
   const isHost = useMemo(() => role === "a", [role]);
 
   const vetoState = useMemo(
-    () => deriveVetoState(meta?.format ?? "bo1", meta?.mapPool ?? [], actions, coinFlip?.winner ?? null),
+    () => deriveVetoState(meta?.format ?? "bo1", meta?.mapPool ?? [], actions, coinFlip?.winner ?? null, meta?.steps),
     [meta, actions, coinFlip],
   );
 
@@ -277,6 +277,8 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
               teamAToken: config.teamAToken,
               teamBToken: config.teamBToken,
               seededPick: config.seededPick ?? false,
+              coinFlipMode: config.coinFlipMode ?? "random",
+              steps: config.steps,
               pickBanTimerSeconds: config.pickBanTimerSeconds ?? null,
               sideTimerSeconds: config.sideTimerSeconds ?? null,
               timerEnforcement: config.timerEnforcement ?? "none",
@@ -372,6 +374,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
         currentActions,
         currentRole,
         currentCoin?.winner ?? null,
+        currentMeta.steps,
       );
       if (!validation.valid) {
         console.warn("[StrinoBans] Invalid action", validation.reason);
@@ -448,16 +451,20 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
 
   const flipCoin = useCallback(() => {
     const session = sessionRef.current;
+    const currentMeta = metaRef.current;
     if (!session) return;
     const existing = getCoinFlip(session.doc);
     if (existing) return;
     const seed = crypto.randomUUID();
-    const winner: Team = Math.random() < 0.5 ? "a" : "b";
+    const isChooseTeam = currentMeta?.coinFlipMode === "choose-team";
+    const provisionalWinner: Team = Math.random() < 0.5 ? "a" : "b";
     const result: CoinFlipResult = {
-      winner,
-      method: "coin-flip",
+      winner: provisionalWinner,
+      method: isChooseTeam ? "choose-team" : "coin-flip",
       seed,
       rolledAt: new Date().toISOString(),
+      flipWinner: isChooseTeam ? provisionalWinner : undefined,
+      choicePending: isChooseTeam ? true : undefined,
     };
     setCoinFlip(session.doc, result);
     playCoinFlipSound();
@@ -468,12 +475,15 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
       const session = sessionRef.current;
       if (!session) return;
       const existing = getCoinFlip(session.doc);
-      if (existing) return;
+      const isChooseTeamChoice = existing && existing.method === "choose-team" && existing.choicePending;
+      if (existing && !isChooseTeamChoice) return;
       const result: CoinFlipResult = {
         winner: firstActor,
-        method: "seeded-pick",
-        seed: "seeded",
-        rolledAt: new Date().toISOString(),
+        method: isChooseTeamChoice ? "choose-team" : "seeded-pick",
+        seed: isChooseTeamChoice ? existing.seed : "seeded",
+        rolledAt: isChooseTeamChoice ? existing.rolledAt : new Date().toISOString(),
+        flipWinner: isChooseTeamChoice ? existing.flipWinner : undefined,
+        choicePending: false,
       };
       setCoinFlip(session.doc, result);
       playCoinFlipSound();
@@ -483,7 +493,8 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
 
   // Auto-flip 1-2s after both ready (only Team A token holder triggers)
   useEffect(() => {
-    if (!meta || coinFlip || meta.seededPick) return;
+    const isSeeded = meta?.seededPick || meta?.coinFlipMode === "seeded";
+    if (!meta || coinFlip || isSeeded) return;
     if (!readyState.a || !readyState.b) return;
     if (role !== "a") return;
     const delay = 1000 + Math.floor(Math.random() * 1000);

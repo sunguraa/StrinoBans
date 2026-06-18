@@ -12,6 +12,8 @@ export interface SessionMeta {
   teamAToken: string;
   teamBToken: string;
   seededPick?: boolean;
+  coinFlipMode?: "random" | "seeded" | "choose-team";
+  steps?: { team: "a" | "b"; type: "ban" | "pick" | "side"; forPickIndex?: number; forDecider?: boolean }[];
   pickBanTimerSeconds?: number | null;
   sideTimerSeconds?: number | null;
   timerEnforcement?: "none" | "random-after-timeout";
@@ -98,8 +100,8 @@ export function setTeamName(doc: Y.Doc, team: Team, name: string): void {
 export function getTeamNames(doc: Y.Doc): Record<Team, string> {
   const maps = getVetoMaps(doc);
   return {
-    a: maps.teamNames.get("a") || "Team A",
-    b: maps.teamNames.get("b") || "Team B",
+    a: maps.teamNames.get("a") ?? "Team A",
+    b: maps.teamNames.get("b") ?? "Team B",
   };
 }
 
