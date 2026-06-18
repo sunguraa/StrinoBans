@@ -1,11 +1,10 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { MAP_POOL } from "@/lib/maps";
-import { getCachedIntroPath } from "@/lib/wiki/cache";
-import { cn } from "@/lib/utils";
+import { useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import { MAP_POOL } from '@/lib/maps';
+import { getCachedIntroPath } from '@/lib/wiki/cache';
+import { cn } from '@/lib/utils';
 
 interface MapSelectorProps {
   selected: string[];
@@ -21,7 +20,10 @@ export function MapSelector({ selected, onChange }: MapSelectorProps) {
     }
   };
 
-  const allSelected = useMemo(() => selected.length === MAP_POOL.length, [selected.length]);
+  const allSelected = useMemo(
+    () => selected.length === MAP_POOL.length,
+    [selected.length]
+  );
 
   const toggleAll = () => {
     if (allSelected) {
@@ -37,11 +39,18 @@ export function MapSelector({ selected, onChange }: MapSelectorProps) {
         <span className="text-sm text-muted-foreground">
           {selected.length} of {MAP_POOL.length} maps selected.
         </span>
-        <Button type="button" variant="outline" size="sm" onClick={toggleAll} aria-label={allSelected ? "Deselect all maps" : "Select all maps"}>
-          {allSelected ? "Deselect all" : "Select all"}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={toggleAll}
+          aria-label={allSelected ? 'Deselect all maps' : 'Select all maps'}
+        >
+          {allSelected ? 'Deselect all' : 'Select all'}
         </Button>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      {/* flex-wrap + justify-center centers an incomplete final row; widths size each card */}
+      <div className="flex flex-wrap justify-center gap-3">
         {MAP_POOL.map((map) => {
           const isSelected = selected.includes(map.id);
           return (
@@ -51,10 +60,14 @@ export function MapSelector({ selected, onChange }: MapSelectorProps) {
               variant="ghost"
               onClick={() => toggle(map.id)}
               aria-pressed={isSelected}
-              aria-label={isSelected ? `${map.name} selected` : `${map.name} not selected`}
+              aria-label={
+                isSelected ? `${map.name} selected` : `${map.name} not selected`
+              }
               className={cn(
-                "flex h-auto flex-col items-center gap-2 rounded-md border p-2 transition-colors",
-                isSelected ? "border-primary bg-primary/10" : "border-border hover:bg-accent",
+                'flex h-auto w-[calc(50%-0.375rem)] flex-col items-center gap-2 rounded-md border p-2 transition-colors sm:w-[calc(33.333%-0.5rem)] md:w-[calc(20%-0.6rem)]',
+                isSelected
+                  ? 'border-primary bg-primary/10'
+                  : 'border-border hover:bg-accent'
               )}
             >
               <img

@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { TeamPanel } from "./team-panel";
 import type { Team } from "@/types/veto";
@@ -11,8 +10,6 @@ interface ReadyUpProps {
   readyState: Record<Team, boolean>;
   onTeamNameChange: (team: Team, name: string) => void;
   onReadyToggle: (team: Team) => void;
-  onOpenShare: () => void;
-  canShare: boolean;
 }
 
 export function ReadyUp({
@@ -21,8 +18,6 @@ export function ReadyUp({
   readyState,
   onTeamNameChange,
   onReadyToggle,
-  onOpenShare,
-  canShare,
 }: ReadyUpProps) {
   const bothReady = readyState.a && readyState.b;
 
@@ -58,20 +53,6 @@ export function ReadyUp({
       >
         {bothReady ? "Both teams ready — starting coin flip…" : "Waiting for both teams to ready up."}
       </p>
-
-      {canShare && (
-        <div className="flex justify-center">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onOpenShare}
-            aria-label="Open share links"
-          >
-            Share room links
-          </Button>
-        </div>
-      )}
     </Card>
   );
 }

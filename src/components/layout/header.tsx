@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 
-export function Header() {
+export function Header({ leftSlot }: { leftSlot?: ReactNode } = {}) {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [mounted, setMounted] = useState(false);
 
@@ -28,13 +28,21 @@ export function Header() {
       className="flex h-15 items-center justify-between border-b border-border px-6 py-3"
       role="banner"
     >
-      <Link
-        href="/"
-        className="font-serif text-xl font-medium italic tracking-tight"
-        aria-label="StrinoBans home"
-      >
-        StrinoBans
-      </Link>
+      <div className="flex items-center gap-3">
+        <Link
+          href="/"
+          className="font-serif text-xl font-medium italic tracking-tight"
+          aria-label="StrinoBans home"
+        >
+          StrinoBans
+        </Link>
+        {leftSlot && (
+          <>
+            <span className="h-5 w-px bg-border" aria-hidden="true" />
+            {leftSlot}
+          </>
+        )}
+      </div>
 
       <nav className="flex items-center gap-6" aria-label="Main">
         <a

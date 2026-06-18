@@ -6,11 +6,20 @@
   "updatedAt": "2026-06-16T00:00:00Z",
   "format": "bo1",
   "ruleset": "default",
-  "mapPool": ["area-88", "base-404", "cauchy-street", "cosmite", "le-brun-city", "ocarnus", "space-lab", "windy-town"],
+  "mapPool": [
+    "area-88",
+    "base-404",
+    "cauchy-street",
+    "cosmite",
+    "le-brun-city",
+    "ocarnus",
+    "space-lab",
+    "windy-town"
+  ],
   "seededPick": false,
   "pickBanTimerSeconds": 50,
   "sideTimerSeconds": 35,
-  "timerEnforcement": "none",
+  "timerEnforcement": "random-after-timeout",
   "roomImportCode": "40GE0I",
   "notes": "Port Euler excluded from Season 3 ranked pool."
 }

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useVetoSession } from "@/lib/yjs/use-veto-session";
 import { Header } from "@/components/layout/header";
@@ -13,7 +13,9 @@ import { TeamPanel } from "./team-panel";
 import { ActionBar } from "./action-bar";
 import { ResultsScreen } from "./results-screen";
 import { ShareModal } from "./share-modal";
+import { Button } from "@/components/ui/button";
 import { getFormatSteps } from "@/lib/state-machine";
+import { saveCompletedSession, type SessionSummary } from "@/lib/storage";
 import type { Team, Side } from "@/types/veto";
 
 export function VetoRoom() {
@@ -21,8 +23,9 @@ export function VetoRoom() {
   const sessionId = searchParams.get("s") || undefined;
   const token = searchParams.get("t") || undefined;
   const session = useVetoSession({ sessionId, token });
-  const [showShare, setShowShare] = useState(true);
+  const [showShare, setShowShare] = useState(false); // Closed by default
   const [coinRevealed, setCoinRevealed] = useState(false);
+  const savedHistoryRef = useRef(false);
 
   const handleTeamNameChange = (team: Team, name: string) => {
     if (team === session.role) session.setTeamName(name);
@@ -64,12 +67,68 @@ export function VetoRoom() {
     URL.revokeObjectURL(url);
   }, [session, sessionId]);
 
+  // Persist a completed veto to local history (each client saves its own copy).
+  useEffect(() => {
+    if (!session.vetoState.isComplete || savedHistoryRef.current || !session.meta) return;
+    savedHistoryRef.current = true;
+    const decider = session.vetoState.deciderMap;
+    const deciderSide = decider
+      ? session.actions.find((a) => a.type === "side" && a.mapId === decider)
+      : undefined;
+    const finalResult: SessionSummary["finalResult"] = session.vetoState.pickedMaps.map((p) => ({
+      mapId: p.mapId,
+      pickedBy: p.pickedBy,
+      side: p.side,
+      sidePickedBy: p.sidePickedBy,
+    }));
+    if (decider) {
+      finalResult.push({
+        mapId: decider,
+        pickedBy: "",
+        side: deciderSide?.side ?? "",
+        sidePickedBy: deciderSide?.team ?? "",
+      });
+    }
+    saveCompletedSession({
+      sessionId: session.meta.sessionId,
+      presetId: session.meta.presetId,
+      presetName: session.meta.presetId,
+      format: session.meta.format,
+      mapPool: session.meta.mapPool,
+      teamAName: session.teamNames.a,
+      teamBName: session.teamNames.b,
+      coinFlipWinner: session.coinFlip?.winner ?? null,
+      actions: session.actions,
+      finalResult,
+      role: session.role,
+    });
+  }, [session]);
+
   const bothReady = session.readyState.a && session.readyState.b;
   // Once the veto has started (rejoin/spectator arriving mid-veto) skip the reveal.
   const vetoStarted = session.actions.length > 0;
   const showBoard = session.coinFlip !== null && (coinRevealed || vetoStarted);
   const showCoinFlip = bothReady && !showBoard;
   const isMyTurn = session.vetoState.currentTeam === session.role;
+
+  // Share availability:
+  //  - Setup phase (before the coin flip): host only, and sees all three links.
+  //  - After the coin flip: everyone can share, but only their own team + spectator.
+  const setupPhase = session.coinFlip === null;
+  const canShare =
+    !!session.shareLinks && !session.vetoState.isComplete && (setupPhase ? session.isHost : true);
+  const shareShowAll = setupPhase && session.isHost;
+  const shareButton = canShare ? (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={() => setShowShare(true)}
+      aria-label="Share room links"
+    >
+      Share Links
+    </Button>
+  ) : undefined;
 
   const totalSteps = getFormatSteps(
     session.meta?.format ?? "bo1",
@@ -83,7 +142,7 @@ export function VetoRoom() {
 
   return (
     <div className="flex h-full flex-col">
-      <Header />
+      <Header leftSlot={shareButton} />
 
       <main className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
         {session.loading && (
@@ -100,6 +159,7 @@ export function VetoRoom() {
               teamNames={session.teamNames}
               actions={session.actions}
               sessionId={session.meta?.sessionId ?? sessionId ?? ""}
+              format={session.meta?.format ?? "bo1"}
               roomImportCode={session.meta?.roomImportCode}
               onDownloadTranscript={handleDownloadTranscript}
             />
@@ -114,8 +174,6 @@ export function VetoRoom() {
               readyState={session.readyState}
               onTeamNameChange={handleTeamNameChange}
               onReadyToggle={handleReadyToggle}
-              onOpenShare={() => setShowShare(true)}
-              canShare={session.role !== "spectator" && !!session.shareLinks}
             />
           </div>
         )}
@@ -211,8 +269,14 @@ export function VetoRoom() {
 
       <Branding />
 
-      {showShare && session.shareLinks && session.role !== "spectator" && !session.vetoState.isComplete && (
-        <ShareModal links={session.shareLinks} roomImportCode={session.meta?.roomImportCode} onClose={() => setShowShare(false)} />
+      {showShare && canShare && session.shareLinks && (
+        <ShareModal
+          links={session.shareLinks}
+          roomImportCode={session.meta?.roomImportCode}
+          role={session.role}
+          showAll={shareShowAll}
+          onClose={() => setShowShare(false)}
+        />
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 # StrinoBans
 
-A serverless, peer-to-peer map veto tool for [Strinova](https://store.steampowered.com/app/2459960/Strinova/). It mirrors the structure of [StrinoPlant](https://sunguraa.github.io/StrinoPlant/) so tournament lobbies can run pick/ban phases without a backend.
+A serverless, peer-to-peer map veto tool for [Strinova](https://store.steampowered.com/app/1282270/Strinova/). It mirrors the structure of [StrinoPlant](https://sunguraa.github.io/StrinoPlant/) so tournament lobbies can run pick/ban phases without a backend.
 
 ## Development
 

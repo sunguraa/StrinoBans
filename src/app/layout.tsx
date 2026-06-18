@@ -18,11 +18,6 @@ const fraunces = Fraunces({
 export const metadata: Metadata = {
   title: 'StrinoBans',
   description: 'Serverless P2P map pick-ban veto tool for Strinova',
-  icons: {
-    icon: '/favicon.png',
-    shortcut: '/favicon.png',
-    apple: '/favicon.png',
-  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

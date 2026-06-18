@@ -6,11 +6,19 @@
   "updatedAt": "2026-06-17T00:00:00Z",
   "format": "bo5",
   "ruleset": "default",
-  "mapPool": ["area-88", "base-404", "cauchy-street", "cosmite", "le-brun-city", "ocarnus", "space-lab"],
+  "mapPool": [
+    "area-88",
+    "base-404",
+    "cauchy-street",
+    "cosmite",
+    "le-brun-city",
+    "ocarnus",
+    "space-lab"
+  ],
   "seededPick": false,
   "pickBanTimerSeconds": 50,
   "sideTimerSeconds": 35,
-  "timerEnforcement": "none",
+  "timerEnforcement": "random-after-timeout",
   "roomImportCode": "0WK8BZ",
   "notes": "7-map pool: full Season 3 ranked pool minus windy-town (placeholder for the community-vote excluded map). bannedMap placeholder - TO should update via PR or contact sunguraa."
 }

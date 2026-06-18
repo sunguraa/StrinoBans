@@ -8,7 +8,9 @@ import { getPlanLink } from "@/lib/routes";
 import { MAP_POOL } from "@/lib/maps";
 import { getCachedIntroPath } from "@/lib/wiki/cache";
 import { cn } from "@/lib/utils";
+import { buildResultImageData, copyVetoResultImage } from "@/lib/result-image";
 import type { Team, Side } from "@/types/veto";
+import type { Format } from "@/types/veto";
 import type { VetoState, ConfirmedAction } from "@/lib/state-machine";
 
 interface ResultsScreenProps {
@@ -16,6 +18,7 @@ interface ResultsScreenProps {
   teamNames: Record<Team, string>;
   actions: ConfirmedAction[];
   sessionId: string;
+  format: Format;
   roomImportCode?: string;
   onDownloadTranscript: () => void;
 }
@@ -43,12 +46,26 @@ export function ResultsScreen({
   teamNames,
   actions,
   sessionId,
+  format,
   roomImportCode,
   onDownloadTranscript,
 }: ResultsScreenProps) {
   const [copied, setCopied] = useState(false);
+  const [imageState, setImageState] = useState<"idle" | "copied" | "downloaded">("idle");
   const mapName = (id: string) => MAP_POOL.find((m) => m.id === id)?.name ?? id;
   const teamName = (t: Team) => (t === "a" ? teamNames.a : teamNames.b);
+
+  const copyImage = async () => {
+    try {
+      const result = await copyVetoResultImage(
+        buildResultImageData({ vetoState, actions, teamNames, format }),
+      );
+      setImageState(result);
+      setTimeout(() => setImageState("idle"), 1800);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const copyRoomCode = async () => {
     if (!roomImportCode) return;
@@ -196,6 +213,14 @@ export function ResultsScreen({
       )}
 
       <div className="flex flex-col gap-2 sm:flex-row">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={copyImage}
+          aria-label="Copy result as image"
+        >
+          {imageState === "copied" ? "Copied image!" : imageState === "downloaded" ? "Image downloaded" : "Copy as Image"}
+        </Button>
         <Button
           type="button"
           variant="outline"

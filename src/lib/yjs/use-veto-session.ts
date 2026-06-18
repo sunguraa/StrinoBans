@@ -37,7 +37,7 @@ import {
 import type { Team, Side, MapId } from "@/types/veto";
 import { getRoleFromToken, generateSessionLinks, type SessionLinks } from "@/lib/token";
 import { getSessionConfig } from "@/lib/storage";
-import { playBeep, playCoinFlipSound } from "@/lib/sound";
+import { playBeep, playCoinFlipSound, playActionSound } from "@/lib/sound";
 
 const LOCAL_ORIGIN = "local-veto";
 const USER_IDENTITY_KEY = "strinobans_user_identity";
@@ -83,6 +83,7 @@ export interface VetoSession {
   peerCount: number;
   role: Team | "spectator";
   displayRole: Team | "spectator";
+  isHost: boolean;
   teamNames: Record<Team, string>;
   readyState: Record<Team, boolean>;
   actions: ConfirmedAction[];
@@ -131,6 +132,8 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
   }, [meta, token]);
 
   const displayRole = useMemo(() => role, [role]);
+
+  const isHost = useMemo(() => role === "a", [role]);
 
   const vetoState = useMemo(
     () => deriveVetoState(meta?.format ?? "bo1", meta?.mapPool ?? [], actions, coinFlip?.winner ?? null),
@@ -387,6 +390,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
       const step = vetoStateRef.current.currentStep;
       if (!step || (step.type !== "ban" && step.type !== "pick")) return;
       submitConfirmedAction({ stepIndex: vetoStateRef.current.currentStepIndex, team: step.team, type: step.type, mapId });
+      playActionSound(step.type);
       setSelectedMapId(null);
     },
     [submitConfirmedAction],
@@ -398,6 +402,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
       if (!step || step.type !== "side") return;
       const mapId = step.forDecider ? vetoStateRef.current.deciderMap ?? undefined : undefined;
       submitConfirmedAction({ stepIndex: vetoStateRef.current.currentStepIndex, team: step.team, type: "side", side, mapId });
+      playActionSound("side");
     },
     [submitConfirmedAction],
   );
@@ -486,32 +491,10 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
     return () => clearTimeout(t);
   }, [readyState, meta, coinFlip, role, flipCoin]);
 
-  // Timer enforcement: random choice after timeout+leniency
-  useEffect(() => {
-    if (!meta || !vetoState.currentStep || meta.timerEnforcement !== "random-after-timeout") return;
-    const currentRole = roleRef.current;
-    const step = vetoState.currentStep;
-    if (currentRole === "spectator" || step.team !== currentRole) return;
-
-    const seconds = step.type === "side" ? meta.sideTimerSeconds ?? 30 : meta.pickBanTimerSeconds ?? 50;
-    const leniency = 5;
-    const deadline = Date.now() + (seconds + leniency) * 1000;
-
-    const t = setTimeout(() => {
-      if (step.type === "side") {
-        const side: Side = Math.random() < 0.5 ? "attacker" : "defender";
-        submitSide(side);
-      } else {
-        const pool = vetoStateRef.current.remainingMaps;
-        if (pool.length > 0) {
-          const mapId = pool[Math.floor(Math.random() * pool.length)];
-          submitMapAction(mapId);
-        }
-      }
-    }, deadline - Date.now());
-
-    return () => clearTimeout(t);
-  }, [meta, vetoState.currentStep, vetoState.currentStepIndex, submitSide, submitMapAction]);
+  // Timer enforcement lives in the <Timer> component (the visible countdown is the
+  // single source of truth). It only fires on the acting team's client, so no
+  // host-authoritative duplicate is needed here — and keeping it out of this hook
+  // avoids the countdown being reset by awareness/state churn.
 
   return useMemo(
     () => ({
@@ -520,6 +503,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
       peerCount,
       role,
       displayRole,
+      isHost,
       teamNames,
       readyState,
       actions,
@@ -546,6 +530,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
       peerCount,
       role,
       displayRole,
+      isHost,
       teamNames,
       readyState,
       actions,
