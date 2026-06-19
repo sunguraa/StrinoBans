@@ -215,11 +215,12 @@ export function deriveVetoState(
   );
 
   const isComplete =
-    currentStepIndex >= steps.length ||
+    steps.length > 0 &&
+    (currentStepIndex >= steps.length ||
     (currentStepIndex === steps.length - 1 &&
       currentStep?.type === 'side' &&
       currentStep?.forDecider === true &&
-      deciderSideAction !== undefined);
+      deciderSideAction !== undefined));
 
   return {
     currentStepIndex,

@@ -11,6 +11,7 @@ import { MapGrid } from "./map-grid";
 import { SequenceTimeline } from "./sequence-timeline";
 import { TeamPanel } from "./team-panel";
 import { ActionBar } from "./action-bar";
+import { Timer } from "./timer";
 import { ResultsScreen } from "./results-screen";
 import { ShareModal } from "./share-modal";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,11 @@ export function VetoRoom() {
   const handleReadyToggle = (team: Team) => {
     if (team === session.role) session.setReady(!session.readyState[team]);
   };
+
+  const handleChoiceTimeout = useCallback(() => {
+    const team: Team = Math.random() < 0.5 ? "a" : "b";
+    session.chooseSeededFirstActor(team);
+  }, [session]);
 
   const handleTimeout = useCallback(() => {
     const step = session.vetoState.currentStep;
@@ -257,6 +263,14 @@ export function VetoRoom() {
                     </Button>
                   </div>
                 )}
+                <Timer
+                  stepIndex={-1}
+                  stepType="side"
+                  seconds={Math.max(20, session.meta?.sideTimerSeconds ?? 35)}
+                  isMyTurn={session.role === session.coinFlip?.flipWinner}
+                  enforcement={session.meta?.timerEnforcement ?? "none"}
+                  onTimeout={handleChoiceTimeout}
+                />
               </div>
             ) : (
               <ActionBar

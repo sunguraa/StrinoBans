@@ -23,11 +23,20 @@ const TRYSTERO_SYNC_ACTION = "yjs-sync";
 const TRYSTERO_AWARENESS_ACTION = "yjs-awareness-update";
 const DEFAULT_TRYSTERO_APP_ID = "strinobans-collab";
 const DEFAULT_TRYSTERO_RELAYS = [
+  "wss://relay.damus.io",
   "wss://nos.lol",
   "wss://relay.nostr.band",
+  "wss://relay.primal.net",
+  "wss://relay.snort.social",
 ];
 const INITIAL_DISCOVERY_WINDOW_MS = 250;
 const REMOTE_SYNC_RESPONSE_TIMEOUT_MS = 1200;
+// A joiner pulls the doc with a one-shot syncStep1 on peer-join; over the internet
+// that first handshake can land before the data channel is ready (or be dropped),
+// leaving meta unsynced until a manual reload. Keep re-requesting until the remote
+// doc actually arrives.
+const RESYNC_INTERVAL_MS = 1500;
+const MAX_RESYNC_ATTEMPTS = 20;
 
 interface AwarenessMetadataRecord {
   clientIds?: number[];
@@ -87,6 +96,8 @@ class TrysteroCollabProvider implements CollabProvider {
   private resolveInitialSync!: (state: CollabInitialSyncState) => void;
   private discoveryTimer: ReturnType<typeof setTimeout> | null = null;
   private syncTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  private resyncTimer: ReturnType<typeof setInterval> | null = null;
+  private resyncAttempts = 0;
   private discoveryComplete = false;
   private initialSyncResolved = false;
   private didReceiveRemoteDoc = false;
@@ -138,6 +149,26 @@ class TrysteroCollabProvider implements CollabProvider {
         this.finishInitialSync(false);
       }, REMOTE_SYNC_RESPONSE_TIMEOUT_MS);
     }, INITIAL_DISCOVERY_WINDOW_MS);
+
+    this.resyncTimer = setInterval(() => {
+      if (this.destroyed || this.didReceiveRemoteDoc) {
+        this.stopResync();
+        return;
+      }
+      this.resyncAttempts += 1;
+      if (this.resyncAttempts > MAX_RESYNC_ATTEMPTS) {
+        this.stopResync();
+        return;
+      }
+      this.peerIds.forEach((peerId) => this.sendSyncStep1(peerId));
+    }, RESYNC_INTERVAL_MS);
+  }
+
+  private stopResync(): void {
+    if (this.resyncTimer) {
+      clearInterval(this.resyncTimer);
+      this.resyncTimer = null;
+    }
   }
 
   destroy(): void {
@@ -145,6 +176,7 @@ class TrysteroCollabProvider implements CollabProvider {
     this.destroyed = true;
     this.clearLocalAwareness();
     this.clearTimers();
+    this.stopResync();
     this.finishInitialSync(false);
     this.doc.off("update", this.handleLocalDocUpdate);
     this.awareness.off("update", this.handleLocalAwarenessUpdate);
@@ -255,6 +287,7 @@ class TrysteroCollabProvider implements CollabProvider {
         messageType === syncProtocol.messageYjsUpdate
       ) {
         this.didReceiveRemoteDoc = true;
+        this.stopResync();
         this.finishInitialSync(false);
       }
       const reply = encoding.toUint8Array(replyEncoder);
