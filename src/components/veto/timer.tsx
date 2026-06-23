@@ -40,10 +40,11 @@ export function Timer({
     leniencyRef.current = leniency;
   });
 
+  const lastUrgentSecond = useRef<number | null>(null);
+
   useEffect(() => {
     let fired = false;
     let tickPlayed = false;
-    let urgentPlayed = false;
     const deadline = Date.now() + seconds * 1000;
 
     const tick = () => {
@@ -55,9 +56,13 @@ export function Timer({
         tickPlayed = true;
         playTickSound();
       }
-      if (!urgentPlayed && left <= 5 && left > 0) {
-        urgentPlayed = true;
-        playUrgentSound();
+
+      // Final 5s: rising-pitch beep once per second.
+      if (left <= 5 && left > 0 && lastUrgentSecond.current !== left) {
+        lastUrgentSecond.current = left;
+        // Higher pitch as time runs out: 5s=660, 4s=770, 3s=880, 2s=990, 1s=1100
+        const pitch = 660 + (5 - left) * 110;
+        playUrgentSound(pitch);
       }
 
       if (

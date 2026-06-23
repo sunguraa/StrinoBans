@@ -37,40 +37,10 @@ import {
 import type { Team, Side, MapId } from "@/types/veto";
 import { getRoleFromToken, generateSessionLinks, type SessionLinks } from "@/lib/token";
 import { getSessionConfig } from "@/lib/storage";
-import { playBeep, playCoinFlipSound, playActionSound } from "@/lib/sound";
+import { playBeep, playCoinFlipSound, playActionSound, playTurnSound } from "@/lib/sound";
+import { getUserIdentity } from "@/lib/identity";
 
 const LOCAL_ORIGIN = "local-veto";
-const USER_IDENTITY_KEY = "strinobans_user_identity";
-
-interface UserIdentity {
-  name: string;
-  color: string;
-}
-
-function randomColor(): string {
-  const colors = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8"];
-  return colors[Math.floor(Math.random() * colors.length)];
-}
-
-function getUserIdentity(): UserIdentity {
-  if (typeof window === "undefined") return { name: "Player", color: randomColor() };
-  try {
-    const raw = window.localStorage.getItem(USER_IDENTITY_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as UserIdentity;
-      if (parsed.name && parsed.color) return parsed;
-    }
-  } catch {
-    // ignore
-  }
-  const identity: UserIdentity = { name: `Player ${Math.floor(Math.random() * 1000)}`, color: randomColor() };
-  try {
-    window.localStorage.setItem(USER_IDENTITY_KEY, JSON.stringify(identity));
-  } catch {
-    // ignore
-  }
-  return identity;
-}
 
 export interface UseVetoSessionOptions {
   sessionId: string | null | undefined;
@@ -140,6 +110,18 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
     [meta, actions, coinFlip],
   );
 
+  // Play a turn cue when it becomes the local player's turn.
+  const lastTurnActorRef = useRef<Team | null>(null);
+  useEffect(() => {
+    const currentStep = vetoState.currentStep;
+    if (role !== "spectator" && currentStep && currentStep.team === role) {
+      if (lastTurnActorRef.current !== role) {
+        playTurnSound();
+      }
+    }
+    lastTurnActorRef.current = currentStep?.team ?? null;
+  }, [vetoState.currentStep, role]);
+
   const shareLinks = useMemo(
     () => (meta ? generateSessionLinks(meta.sessionId, meta.teamAToken, meta.teamBToken) : null),
     [meta],
@@ -148,17 +130,17 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
   // Refs for latest state inside callbacks/effects. Synced in an effect rather
   // than during render: nothing reads these during render, only inside callbacks
   // and effects that run after commit, so this stays fresh and rule-compliant.
+  const roleRef = useRef(role);
   const metaRef = useRef(meta);
   const actionsRef = useRef(actions);
   const coinFlipRef = useRef(coinFlip);
-  const roleRef = useRef(role);
   const vetoStateRef = useRef(vetoState);
   const localNameRef = useRef(localName);
   useEffect(() => {
+    roleRef.current = role;
     metaRef.current = meta;
     actionsRef.current = actions;
     coinFlipRef.current = coinFlip;
-    roleRef.current = role;
     vetoStateRef.current = vetoState;
     localNameRef.current = localName;
   });

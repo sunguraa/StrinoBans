@@ -2,18 +2,18 @@
   "id": "papercut-bo3",
   "name": "Papercut Series - Bo3",
   "author": "idol_val",
-  "description": "Papercut Series Bo3 on a 7-map pool. A coin flip is held and its winner chooses who moves first, then: A ban, B ban, A pick (B side), B pick (A side), A ban, B ban, then the first mover picks side on the decider.",
-  "updatedAt": "2026-06-17T00:00:00Z",
+  "description": "Papercut Series Bo3 on a 7-map pool. A coin is flipped and the winner decides who goes first, then: A ban, B ban, A pick (B side), B pick (A side), A ban, B ban, then the first mover picks side on the decider.",
+  "updatedAt": "2026-06-22T00:00:00Z",
   "format": "bo3",
   "ruleset": "default",
   "mapPool": [
     "area-88",
     "base-404",
     "cauchy-street",
-    "cosmite",
     "le-brun-city",
     "ocarnus",
-    "space-lab"
+    "space-lab",
+    "windy-town"
   ],
   "seededPick": false,
   "coinFlipMode": "choose-team",
@@ -21,5 +21,5 @@
   "sideTimerSeconds": 35,
   "timerEnforcement": "random-after-timeout",
   "roomImportCode": "0WK8BZ",
-  "notes": "7-map pool: full Season 3 ranked pool minus windy-town (placeholder for the community-vote excluded map). bannedMap placeholder - TO should update via PR or contact sunguraa."
+  "notes": "7-map pool: full Season 3 ranked pool minus Cosmite and Port Euler."
 }

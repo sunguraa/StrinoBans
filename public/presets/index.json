@@ -18,8 +18,8 @@
       "id": "papercut-series",
       "name": "Papercut Series",
       "author": "idol_val",
-      "description": "Papercut Series ruleset by idol_val. Coin flip — the winner chooses who moves first. Uses a 7-map pool (one map excluded via community vote - currently placeholder is windy-town; TOs should update). Bo1, Bo3, and Bo5 stages.",
-      "updatedAt": "2026-06-17T00:00:00Z",
+      "description": "Papercut Series ruleset. A coin is flipped and the winner decides who goes first. 7-map ruleset with Cosmite and Port Euler removed. Bo1, Bo3, and Bo5 stages.",
+      "updatedAt": "2026-06-22T00:00:00Z",
       "stages": [
         { "format": "bo1", "presetId": "papercut-bo1" },
         { "format": "bo3", "presetId": "papercut-bo3" },

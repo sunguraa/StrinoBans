@@ -17,6 +17,7 @@ import { ShareModal } from "./share-modal";
 import { Button } from "@/components/ui/button";
 import { getFormatSteps } from "@/lib/state-machine";
 import { saveCompletedSession, type SessionSummary } from "@/lib/storage";
+import { isNameClean } from "@/lib/filters";
 import type { Team, Side } from "@/types/veto";
 
 export function VetoRoom() {
@@ -29,7 +30,9 @@ export function VetoRoom() {
   const savedHistoryRef = useRef(false);
 
   const handleTeamNameChange = (team: Team, name: string) => {
-    if (team === session.role) session.setTeamName(name);
+    if (team !== session.role) return;
+    if (!isNameClean(name)) return;
+    session.setTeamName(name);
   };
 
   const handleReadyToggle = (team: Team) => {

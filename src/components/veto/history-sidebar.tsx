@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSessionHistory, downloadSessionTranscript, type SessionSummary } from "@/lib/storage";
+import { getSessionHistory, removeSessionHistory, downloadSessionTranscript, type SessionSummary } from "@/lib/storage";
 import { formatLabel } from "@/lib/result-image";
 import { ResultModal } from "./result-modal";
 
@@ -24,6 +24,24 @@ export function HistorySidebar() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSessions(getSessionHistory());
   }, []);
+
+  const handleDelete = (sessionId: string, event: React.MouseEvent) => {
+    const session = sessions.find((s) => s.sessionId === sessionId);
+    if (!session) return;
+
+    const skipConfirm = event.shiftKey;
+    if (
+      !skipConfirm &&
+      !window.confirm(
+        `Delete this veto history entry?\n\nHold Shift and click the trash icon to delete without asking.`,
+      )
+    ) {
+      return;
+    }
+
+    removeSessionHistory(sessionId);
+    setSessions((prev) => prev.filter((s) => s.sessionId !== sessionId));
+  };
 
   return (
     <aside
@@ -68,6 +86,20 @@ export function HistorySidebar() {
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleDelete(s.sessionId, e)}
+                  className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                  aria-label={`Delete ${s.teamAName} vs ${s.teamBName} history`}
+                  title="Delete (Shift+click to skip confirmation)"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    <line x1="10" y1="11" x2="10" y2="17" />
+                    <line x1="14" y1="11" x2="14" y2="17" />
                   </svg>
                 </button>
               </div>
