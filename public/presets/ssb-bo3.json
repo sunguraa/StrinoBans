@@ -1,0 +1,24 @@
+{
+  "id": "ssb-bo3",
+  "name": "Super Stringify Brawl — Bo3",
+  "author": "areeb",
+  "description": "Best of three - 2 bans, 2 picks, 2 bans, 1 pick. Lower seed sets first mover.",
+  "updatedAt": "2026-07-24T00:00:00Z",
+  "format": "bo3",
+  "ruleset": "default",
+  "mapPool": [
+    "area-88",
+    "base-404",
+    "cauchy-street",
+    "cosmite",
+    "ocarnus",
+    "space-lab",
+    "windy-town"
+  ],
+  "seededPick": false,
+  "coinFlipMode": "choose-team",
+  "pickBanTimerSeconds": 50,
+  "sideTimerSeconds": 35,
+  "timerEnforcement": "random-after-timeout",
+  "notes": "Stringify's first tournament map pool."
+}
