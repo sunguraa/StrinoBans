@@ -25,6 +25,18 @@
         { "format": "bo3", "presetId": "papercut-bo3" },
         { "format": "bo5", "presetId": "papercut-bo5" }
       ]
-    }
+    },
+    {                                                                                                                                                           
+     "id": "super-stringify-brawl",
+     "name": "Super Stringify Brawl",
+     "author": "areeb",
+     "description": "Super Stringify Brawl ruleset. Coin-flip winner chooses who acts first. Seven-map pool with Bo1, Bo3, and Bo5 stages.",
+     "updatedAt": "2026-07-24T00:00:00Z",
+     "stages": [
+       { "format": "bo1", "presetId": "ssb-bo1" },
+       { "format": "bo3", "presetId": "ssb-bo3" },
+       { "format": "bo5", "presetId": "ssb-bo5" }
+       ]
+     }
   ]
 }
