@@ -18,7 +18,7 @@
       "id": "papercut-series",
       "name": "Papercut Series",
       "author": "idol_val",
-      "description": "Papercut Series ruleset. A coin is flipped and the winner decides who goes first. 7-map ruleset with Cosmite and Port Euler removed. Bo1, Bo3, and Bo5 stages.",
+      "description": "Papercut Series ruleset. A coin is flipped, and the winner decides who goes first. 7-map ruleset with Cosmite and Port Euler removed. Bo1, Bo3, and Bo5 stages.",
       "updatedAt": "2026-06-22T00:00:00Z",
       "stages": [
         { "format": "bo1", "presetId": "papercut-bo1" },
@@ -30,7 +30,7 @@
      "id": "super-stringify-brawl",
      "name": "Super Stringify Brawl",
      "author": "areeb",
-     "description": "Super Stringify Brawl ruleset. Coin-flip winner chooses who acts first. Seven-map pool with Bo1, Bo3, and Bo5 stages.",
+     "description": "Super Stringify Brawl ruleset. Lower seed (Team A) chooses who acts first. Seven-map pool with Bo1, Bo3, and Bo5 stages.",
      "updatedAt": "2026-07-24T00:00:00Z",
      "stages": [
        { "format": "bo1", "presetId": "ssb-bo1" },
