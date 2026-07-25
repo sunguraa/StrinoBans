@@ -15,8 +15,8 @@
     "space-lab",
     "windy-town"
   ],
-  "seededPick": false,
-  "coinFlipMode": "choose-team",
+  "seededPick": true,
+  "coinFlipMode": "seeded",
   "pickBanTimerSeconds": 50,
   "sideTimerSeconds": 35,
   "timerEnforcement": "random-after-timeout",
