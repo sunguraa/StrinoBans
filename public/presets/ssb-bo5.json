@@ -1,0 +1,23 @@
+{
+  "id": "ssb-bo5",
+  "name": "Super Stringify Brawl — Bo5",
+  "author": "areeb",
+  "description": "Best of 5 — one ban, 4 picks, one ban, one pick. Lower seed sets first mover.",
+  "updatedAt": "2026-07-24T00:00:00Z",
+  "format": "bo5",
+  "ruleset": "default",
+  "mapPool": [
+    "area-88",
+    "base-404",
+    "cauchy-street",
+    "cosmite",
+    "ocarnus",
+    "space-lab",
+    "windy-town"
+  ],
+  "firstActorMode": "team-a",
+  "pickBanTimerSeconds": 50,
+  "sideTimerSeconds": 35,
+  "timerEnforcement": "random-after-timeout",
+  "notes": "Stringify's first tournament map pool."
+}

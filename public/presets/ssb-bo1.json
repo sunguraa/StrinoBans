@@ -1,0 +1,23 @@
+{
+  "id": "ssb-bo1",
+  "name": "Super Stringify Brawl — Bo1",
+  "author": "areeb",
+  "description": "Single map. Teams alternate bans down to one decider; the team that didn't ban last picks side.",
+  "updatedAt": "2026-07-24T00:00:00Z",
+  "format": "bo1",
+  "ruleset": "default",
+  "mapPool": [
+    "area-88",
+    "base-404",
+    "cauchy-street",
+    "cosmite",
+    "ocarnus",
+    "space-lab",
+    "windy-town"
+  ],
+  "firstActorMode": "team-a",
+  "pickBanTimerSeconds": 50,
+  "sideTimerSeconds": 35,
+  "timerEnforcement": "random-after-timeout",
+  "notes": "Stringify's first tournament map pool."
+}
