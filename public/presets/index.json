@@ -30,7 +30,7 @@
      "id": "super-stringify-brawl",
      "name": "Super Stringify Brawl",
      "author": "areeb",
-     "description": "Super Stringify Brawl ruleset. Lower seed (Team A) chooses who acts first. Seven-map pool with Bo1, Bo3, and Bo5 stages.",
+     "description": "Super Stringify Brawl ruleset. Lower seed (Team A) goes first. Seven-map pool with Bo1, Bo3, and Bo5 stages.",
      "updatedAt": "2026-07-24T00:00:00Z",
      "stages": [
        { "format": "bo1", "presetId": "ssb-bo1" },

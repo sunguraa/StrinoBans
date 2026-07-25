@@ -19,5 +19,6 @@
   "pickBanTimerSeconds": 50,
   "sideTimerSeconds": 35,
   "timerEnforcement": "random-after-timeout",
+  "roomImportCode": "FOZJOE",
   "notes": "Stringify's first tournament map pool."
 }
