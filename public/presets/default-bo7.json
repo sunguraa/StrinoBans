@@ -16,7 +16,7 @@
     "space-lab",
     "windy-town"
   ],
-  "seededPick": false,
+  "firstActorMode": "random",
   "pickBanTimerSeconds": 50,
   "sideTimerSeconds": 35,
   "timerEnforcement": "random-after-timeout",

@@ -1,4 +1,11 @@
-import type { Format, Team, Side, MapId, ActionType } from '@/types/veto';
+import type {
+  Format,
+  Team,
+  Side,
+  MapId,
+  ActionType,
+  FirstActorMode,
+} from '@/types/veto';
 
 export type StepType = 'ban' | 'pick' | 'side';
 
@@ -40,13 +47,57 @@ export interface VetoState {
   pendingPick: { mapId: MapId; pickedBy: Team; pickStepIndex: number } | null;
 }
 
-export interface CoinFlipResult {
-  winner: Team;
-  method: string;
-  seed: string;
-  rolledAt: string;
+export interface FirstActorResult {
+  firstActor?: Team;
+  mode: FirstActorMode;
+  flipSeed?: string;
+  flippedAt?: string;
+  resolvedAt?: string;
   flipWinner?: Team;
   choicePending?: boolean;
+}
+
+export function canStartFirstActorFlip(
+  mode: FirstActorMode | undefined,
+  role: Team | 'spectator',
+  readyState: Record<Team, boolean>,
+  existingResult: FirstActorResult | null
+): mode is Exclude<FirstActorMode, 'team-a'> {
+  return (
+    (mode === 'random' || mode === 'coinflip') &&
+    role === 'a' &&
+    readyState.a &&
+    readyState.b &&
+    existingResult === null
+  );
+}
+
+export function startCoinFlip(
+  mode: Exclude<FirstActorMode, 'team-a'>,
+  flipWinner: Team,
+  flipSeed: string,
+  flippedAt: string
+): FirstActorResult {
+  const flip = { mode, flipWinner, flipSeed, flippedAt };
+  return mode === 'coinflip'
+    ? { ...flip, choicePending: true }
+    : { ...flip, firstActor: flipWinner, resolvedAt: flippedAt };
+}
+
+export function resolveCoinflipChoice(
+  result: FirstActorResult,
+  chooser: Team,
+  firstActor: Team,
+  resolvedAt: string
+): FirstActorResult {
+  if (
+    result.mode !== 'coinflip' ||
+    !result.choicePending ||
+    result.flipWinner !== chooser
+  ) {
+    return result;
+  }
+  return { ...result, firstActor, resolvedAt, choicePending: false };
 }
 
 export type BestOf = 1 | 3 | 5 | 7;
@@ -130,13 +181,14 @@ export function minMapsForBestOf(bestOf: BestOf): number {
 export function getFormatSteps(
   format: Format,
   mapCount?: number,
-  coinFlipWinner?: Team | null,
-  customSteps?: VetoStep[],
+  firstActor?: Team | null,
+  customSteps?: VetoStep[]
 ): VetoStep[] {
-  const steps = customSteps && customSteps.length > 0
-    ? customSteps
-    : generateSteps(bestOfForFormat(format), mapCount ?? 8);
-  if (coinFlipWinner === 'b') {
+  const steps =
+    customSteps && customSteps.length > 0
+      ? customSteps
+      : generateSteps(bestOfForFormat(format), mapCount ?? 8);
+  if (firstActor === 'b') {
     return swapStepTeams(steps);
   }
   return steps;
@@ -146,10 +198,11 @@ export function deriveVetoState(
   format: Format,
   mapPool: MapId[],
   actions: ConfirmedAction[],
-  coinFlipWinner?: Team | null,
-  customSteps?: VetoStep[],
+  firstActor?: Team | null,
+  customSteps?: VetoStep[]
 ): VetoState {
-  const steps = getFormatSteps(format, mapPool.length, coinFlipWinner, customSteps);
+  const actorResolved = firstActor !== undefined && firstActor !== null;
+  const steps = getFormatSteps(format, mapPool.length, firstActor, customSteps);
 
   const bannedMaps: MapId[] = [];
   const pickedMaps: PickedMap[] = [];
@@ -161,7 +214,11 @@ export function deriveVetoState(
   });
 
   const seenStepIndices = new Set<number>();
-  let pendingPick: { mapId: MapId; pickedBy: Team; pickStepIndex: number } | null = null;
+  let pendingPick: {
+    mapId: MapId;
+    pickedBy: Team;
+    pickStepIndex: number;
+  } | null = null;
 
   for (const action of sortedActions) {
     if (seenStepIndices.has(action.stepIndex)) continue;
@@ -206,21 +263,27 @@ export function deriveVetoState(
   }
 
   const remainingMaps = mapPool.filter((m) => !usedMaps.has(m));
-  const currentStepIndex = sortedActions.filter((a) => seenStepIndices.has(a.stepIndex)).length;
-  const currentStep = currentStepIndex < steps.length ? steps[currentStepIndex] : null;
+  const currentStepIndex = sortedActions.filter((a) =>
+    seenStepIndices.has(a.stepIndex)
+  ).length;
+  const currentStep =
+    actorResolved && currentStepIndex < steps.length
+      ? steps[currentStepIndex]
+      : null;
   const deciderMap = remainingMaps.length === 1 ? remainingMaps[0] : null;
 
   const deciderSideAction = actions.find(
-    (a) => a.type === 'side' && steps[a.stepIndex]?.forDecider === true,
+    (a) => a.type === 'side' && steps[a.stepIndex]?.forDecider === true
   );
 
   const isComplete =
+    actorResolved &&
     steps.length > 0 &&
     (currentStepIndex >= steps.length ||
-    (currentStepIndex === steps.length - 1 &&
-      currentStep?.type === 'side' &&
-      currentStep?.forDecider === true &&
-      deciderSideAction !== undefined));
+      (currentStepIndex === steps.length - 1 &&
+        currentStep?.type === 'side' &&
+        currentStep?.forDecider === true &&
+        deciderSideAction !== undefined));
 
   return {
     currentStepIndex,
@@ -242,17 +305,29 @@ export function validateAction(
   mapPool: MapId[],
   actions: ConfirmedAction[],
   role: Team | 'spectator',
-  coinFlipWinner?: Team | null,
-  customSteps?: VetoStep[],
+  firstActor?: Team | null,
+  customSteps?: VetoStep[]
 ): { valid: boolean; reason?: string } {
-  const steps = getFormatSteps(format, mapPool.length, coinFlipWinner, customSteps);
-  const state = deriveVetoState(format, mapPool, actions, coinFlipWinner, customSteps);
-
   if (role === 'spectator') {
     return { valid: false, reason: 'Spectators cannot take actions' };
   }
+  if (firstActor === undefined || firstActor === null) {
+    return { valid: false, reason: 'First actor has not been resolved' };
+  }
+  const steps = getFormatSteps(format, mapPool.length, firstActor, customSteps);
+  const state = deriveVetoState(
+    format,
+    mapPool,
+    actions,
+    firstActor,
+    customSteps
+  );
+
   if (role !== action.team) {
-    return { valid: false, reason: `Team ${role} cannot act for team ${action.team}` };
+    return {
+      valid: false,
+      reason: `Team ${role} cannot act for team ${action.team}`,
+    };
   }
 
   if (action.stepIndex !== state.currentStepIndex) {
@@ -268,11 +343,17 @@ export function validateAction(
   }
 
   if (action.team !== step.team) {
-    return { valid: false, reason: `Expected team ${step.team}, got ${action.team}` };
+    return {
+      valid: false,
+      reason: `Expected team ${step.team}, got ${action.team}`,
+    };
   }
 
   if (action.type !== step.type) {
-    return { valid: false, reason: `Expected action ${step.type}, got ${action.type}` };
+    return {
+      valid: false,
+      reason: `Expected action ${step.type}, got ${action.type}`,
+    };
   }
 
   if (action.type === 'ban' || action.type === 'pick') {
@@ -280,7 +361,10 @@ export function validateAction(
       return { valid: false, reason: 'Missing mapId for ban/pick' };
     }
     if (!state.remainingMaps.includes(action.mapId)) {
-      return { valid: false, reason: 'Map not available (already banned/picked)' };
+      return {
+        valid: false,
+        reason: 'Map not available (already banned/picked)',
+      };
     }
   }
 

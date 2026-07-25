@@ -1,29 +1,29 @@
-﻿"use client";
+'use client';
 
-import { useState, useCallback, useEffect, useRef } from "react";
-import { useSearchParams } from "next/navigation";
-import { useVetoSession } from "@/lib/yjs/use-veto-session";
-import { Header } from "@/components/layout/header";
-import { Branding } from "@/components/layout/branding";
-import { ReadyUp } from "./ready-up";
-import { CoinFlip } from "./coin-flip";
-import { MapGrid } from "./map-grid";
-import { SequenceTimeline } from "./sequence-timeline";
-import { TeamPanel } from "./team-panel";
-import { ActionBar } from "./action-bar";
-import { Timer } from "./timer";
-import { ResultsScreen } from "./results-screen";
-import { ShareModal } from "./share-modal";
-import { Button } from "@/components/ui/button";
-import { getFormatSteps } from "@/lib/state-machine";
-import { saveCompletedSession, type SessionSummary } from "@/lib/storage";
-import { isNameClean } from "@/lib/filters";
-import type { Team, Side } from "@/types/veto";
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useVetoSession } from '@/lib/yjs/use-veto-session';
+import { Header } from '@/components/layout/header';
+import { Branding } from '@/components/layout/branding';
+import { ReadyUp } from './ready-up';
+import { CoinFlip } from './coin-flip';
+import { MapGrid } from './map-grid';
+import { SequenceTimeline } from './sequence-timeline';
+import { TeamPanel } from './team-panel';
+import { ActionBar } from './action-bar';
+import { Timer } from './timer';
+import { ResultsScreen } from './results-screen';
+import { ShareModal } from './share-modal';
+import { Button } from '@/components/ui/button';
+import { getFormatSteps } from '@/lib/state-machine';
+import { saveCompletedSession, type SessionSummary } from '@/lib/storage';
+import { isNameClean } from '@/lib/filters';
+import type { Team, Side } from '@/types/veto';
 
 export function VetoRoom() {
   const searchParams = useSearchParams();
-  const sessionId = searchParams.get("s") || undefined;
-  const token = searchParams.get("t") || undefined;
+  const sessionId = searchParams.get('s') || undefined;
+  const token = searchParams.get('t') || undefined;
   const session = useVetoSession({ sessionId, token });
   const [showShare, setShowShare] = useState(false); // Closed by default
   const [coinRevealed, setCoinRevealed] = useState(false);
@@ -40,15 +40,15 @@ export function VetoRoom() {
   };
 
   const handleChoiceTimeout = useCallback(() => {
-    const team: Team = Math.random() < 0.5 ? "a" : "b";
-    session.chooseSeededFirstActor(team);
+    const team: Team = Math.random() < 0.5 ? 'a' : 'b';
+    session.chooseFirstActor(team);
   }, [session]);
 
   const handleTimeout = useCallback(() => {
     const step = session.vetoState.currentStep;
     if (!step) return;
-    if (step.type === "side") {
-      const side: Side = Math.random() < 0.5 ? "attacker" : "defender";
+    if (step.type === 'side') {
+      const side: Side = Math.random() < 0.5 ? 'attacker' : 'defender';
       session.submitSide(side);
     } else {
       const pool = session.vetoState.remainingMaps;
@@ -67,35 +67,43 @@ export function VetoRoom() {
       actions: session.actions,
       vetoState: session.vetoState,
     };
-    const blob = new Blob([JSON.stringify(transcript, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(transcript, null, 2)], {
+      type: 'application/json',
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    const a = document.createElement('a');
     a.href = url;
-    a.download = `veto-${session.meta?.sessionId ?? "unknown"}.json`;
+    a.download = `veto-${session.meta?.sessionId ?? 'unknown'}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }, [session, sessionId]);
 
   // Persist a completed veto to local history (each client saves its own copy).
   useEffect(() => {
-    if (!session.vetoState.isComplete || savedHistoryRef.current || !session.meta) return;
+    if (
+      !session.vetoState.isComplete ||
+      savedHistoryRef.current ||
+      !session.meta
+    )
+      return;
     savedHistoryRef.current = true;
     const decider = session.vetoState.deciderMap;
     const deciderSide = decider
-      ? session.actions.find((a) => a.type === "side" && a.mapId === decider)
+      ? session.actions.find((a) => a.type === 'side' && a.mapId === decider)
       : undefined;
-    const finalResult: SessionSummary["finalResult"] = session.vetoState.pickedMaps.map((p) => ({
-      mapId: p.mapId,
-      pickedBy: p.pickedBy,
-      side: p.side,
-      sidePickedBy: p.sidePickedBy,
-    }));
+    const finalResult: SessionSummary['finalResult'] =
+      session.vetoState.pickedMaps.map((p) => ({
+        mapId: p.mapId,
+        pickedBy: p.pickedBy,
+        side: p.side,
+        sidePickedBy: p.sidePickedBy,
+      }));
     if (decider) {
       finalResult.push({
         mapId: decider,
-        pickedBy: "",
-        side: deciderSide?.side ?? "",
-        sidePickedBy: deciderSide?.team ?? "",
+        pickedBy: '',
+        side: deciderSide?.side ?? '',
+        sidePickedBy: deciderSide?.team ?? '',
       });
     }
     saveCompletedSession({
@@ -106,7 +114,7 @@ export function VetoRoom() {
       mapPool: session.meta.mapPool,
       teamAName: session.teamNames.a,
       teamBName: session.teamNames.b,
-      coinFlipWinner: session.coinFlip?.winner ?? null,
+      firstActor: session.firstActorResult?.firstActor ?? null,
       actions: session.actions,
       finalResult,
       role: session.role,
@@ -116,15 +124,17 @@ export function VetoRoom() {
   const bothReady = session.readyState.a && session.readyState.b;
   // Once the veto has started (rejoin/spectator arriving mid-veto) skip the reveal.
   const vetoStarted = session.actions.length > 0;
-  const showBoard = session.coinFlip !== null && (coinRevealed || vetoStarted);
-  const showCoinFlip = bothReady && !showBoard;
+  const teamAStarts = session.meta?.firstActorMode === 'team-a';
+  const showBoard =
+    session.firstActorResult !== null &&
+    (teamAStarts || coinRevealed || vetoStarted);
+  const showCoinFlip = bothReady && !showBoard && !teamAStarts;
   const isMyTurn = session.vetoState.currentTeam === session.role;
-  const choicePending = !!session.coinFlip?.choicePending;
+  const choicePending = !!session.firstActorResult?.choicePending;
 
-  // Share availability:
-  //  - Setup phase (before the coin flip): host only, and sees all three links.
-  //  - After the coin flip: everyone can share, but only their own team + spectator.
-  const setupPhase = session.coinFlip === null;
+  // During setup the host sees all links. Once the first actor is established,
+  // each participant can share only their own team link and the spectator link.
+  const setupPhase = session.firstActorResult === null;
   const canShare = !!session.shareLinks && !session.vetoState.isComplete;
   const shareShowAll = setupPhase && session.isHost;
   const shareButton = canShare ? (
@@ -140,14 +150,19 @@ export function VetoRoom() {
   ) : undefined;
 
   const totalSteps = getFormatSteps(
-    session.meta?.format ?? "bo1",
+    session.meta?.format ?? 'bo1',
     session.meta?.mapPool?.length ?? 0,
-    session.coinFlip?.winner ?? null,
+    session.firstActorResult?.firstActor ?? null
   ).length;
   const phaseStep = Math.min(session.vetoState.currentStepIndex, totalSteps);
   const phasePct = totalSteps > 0 ? (phaseStep / totalSteps) * 100 : 0;
 
-  const myTeamIntents = session.role === "a" ? session.intents.teamA : session.role === "b" ? session.intents.teamB : [];
+  const myTeamIntents =
+    session.role === 'a'
+      ? session.intents.teamA
+      : session.role === 'b'
+        ? session.intents.teamB
+        : [];
 
   return (
     <div className="flex h-full flex-col">
@@ -155,7 +170,11 @@ export function VetoRoom() {
 
       <main className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
         {session.loading && (
-          <div className="flex flex-1 items-center justify-center" role="status" aria-live="polite">
+          <div
+            className="flex flex-1 items-center justify-center"
+            role="status"
+            aria-live="polite"
+          >
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             <span className="ml-3">Connecting to veto room...</span>
           </div>
@@ -167,8 +186,8 @@ export function VetoRoom() {
               vetoState={session.vetoState}
               teamNames={session.teamNames}
               actions={session.actions}
-              sessionId={session.meta?.sessionId ?? sessionId ?? ""}
-              format={session.meta?.format ?? "bo1"}
+              sessionId={session.meta?.sessionId ?? sessionId ?? ''}
+              format={session.meta?.format ?? 'bo1'}
               roomImportCode={session.meta?.roomImportCode}
               onDownloadTranscript={handleDownloadTranscript}
             />
@@ -193,10 +212,7 @@ export function VetoRoom() {
           <div className="flex flex-1 flex-col items-center justify-center gap-4">
             <CoinFlip
               teamNames={session.teamNames}
-              coinFlip={session.coinFlip}
-              seededPick={session.meta?.seededPick}
-              role={session.role}
-              onChooseFirstActor={session.chooseSeededFirstActor}
+              result={session.firstActorResult}
               onRevealComplete={() => setCoinRevealed(true)}
             />
           </div>
@@ -207,20 +223,28 @@ export function VetoRoom() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <TeamPanel
                 team="a"
-                label={session.displayRole === "a" && session.role !== "spectator" ? "Team A (You)" : "Team A"}
+                label={
+                  session.displayRole === 'a' && session.role !== 'spectator'
+                    ? 'Team A (You)'
+                    : 'Team A'
+                }
                 name={session.teamNames.a}
-                isMe={session.displayRole === "a"}
+                isMe={session.displayRole === 'a'}
                 isReady={session.readyState.a}
-                isActing={session.vetoState.currentTeam === "a"}
+                isActing={session.vetoState.currentTeam === 'a'}
                 editable={false}
               />
               <TeamPanel
                 team="b"
-                label={session.displayRole === "b" && session.role !== "spectator" ? "Team B (You)" : "Team B"}
+                label={
+                  session.displayRole === 'b' && session.role !== 'spectator'
+                    ? 'Team B (You)'
+                    : 'Team B'
+                }
                 name={session.teamNames.b}
-                isMe={session.displayRole === "b"}
+                isMe={session.displayRole === 'b'}
                 isReady={session.readyState.b}
-                isActing={session.vetoState.currentTeam === "b"}
+                isActing={session.vetoState.currentTeam === 'b'}
                 editable={false}
               />
             </div>
@@ -243,15 +267,15 @@ export function VetoRoom() {
             {choicePending ? (
               <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 md:flex-row md:items-center md:justify-between">
                 <p className="flex-1 text-sm font-medium">
-                  {session.role === session.coinFlip?.flipWinner
-                    ? "You won the coin flip! Choose who goes first:"
-                    : `Waiting for ${session.coinFlip?.flipWinner === "a" ? session.teamNames.a : session.teamNames.b} to choose…`}
+                  {session.role === session.firstActorResult?.flipWinner
+                    ? 'You won the coin flip! Choose who goes first:'
+                    : `Waiting for ${session.firstActorResult?.flipWinner === 'a' ? session.teamNames.a : session.teamNames.b} to choose…`}
                 </p>
-                {session.role === session.coinFlip?.flipWinner && (
+                {session.role === session.firstActorResult?.flipWinner && (
                   <div className="flex gap-2">
                     <Button
                       type="button"
-                      onClick={() => session.chooseSeededFirstActor("a")}
+                      onClick={() => session.chooseFirstActor('a')}
                       aria-label={`${session.teamNames.a} goes first`}
                     >
                       {session.teamNames.a} First
@@ -259,7 +283,7 @@ export function VetoRoom() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => session.chooseSeededFirstActor("b")}
+                      onClick={() => session.chooseFirstActor('b')}
                       aria-label={`${session.teamNames.b} goes first`}
                     >
                       {session.teamNames.b} First
@@ -270,8 +294,10 @@ export function VetoRoom() {
                   stepIndex={-1}
                   stepType="side"
                   seconds={Math.max(20, session.meta?.sideTimerSeconds ?? 35)}
-                  isMyTurn={session.role === session.coinFlip?.flipWinner}
-                  enforcement={session.meta?.timerEnforcement ?? "none"}
+                  isMyTurn={
+                    session.role === session.firstActorResult?.flipWinner
+                  }
+                  enforcement={session.meta?.timerEnforcement ?? 'none'}
                   onTimeout={handleChoiceTimeout}
                 />
               </div>
@@ -282,10 +308,16 @@ export function VetoRoom() {
                 isMyTurn={isMyTurn}
                 selectedMapId={session.selectedMapId}
                 teamNames={session.teamNames}
-                pickBanSeconds={Math.max(30, session.meta?.pickBanTimerSeconds ?? 50)}
+                pickBanSeconds={Math.max(
+                  30,
+                  session.meta?.pickBanTimerSeconds ?? 50
+                )}
                 sideSeconds={Math.max(20, session.meta?.sideTimerSeconds ?? 35)}
-                timerEnforcement={session.meta?.timerEnforcement ?? "none"}
-                onConfirm={() => session.selectedMapId && session.submitMapAction(session.selectedMapId)}
+                timerEnforcement={session.meta?.timerEnforcement ?? 'none'}
+                onConfirm={() =>
+                  session.selectedMapId &&
+                  session.submitMapAction(session.selectedMapId)
+                }
                 onTimeout={handleTimeout}
                 onSide={session.submitSide}
               />
@@ -304,12 +336,12 @@ export function VetoRoom() {
             />
 
             <SequenceTimeline
-              format={session.meta?.format ?? "bo1"}
+              format={session.meta?.format ?? 'bo1'}
               mapPool={session.meta?.mapPool ?? []}
               actions={session.actions}
               currentStepIndex={session.vetoState.currentStepIndex}
               teamNames={session.teamNames}
-              coinFlip={session.coinFlip}
+              firstActorResult={session.firstActorResult}
               customSteps={session.meta?.steps}
               choicePending={choicePending}
             />
@@ -331,5 +363,3 @@ export function VetoRoom() {
     </div>
   );
 }
-
-

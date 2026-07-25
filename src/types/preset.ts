@@ -1,3 +1,5 @@
+import type { FirstActorMode } from '@/types/veto';
+
 export interface PresetMeta {
   id: string;
   name: string;
@@ -10,9 +12,13 @@ export interface PresetMeta {
 
 export interface VetoPreset extends PresetMeta {
   mapPool: string[];
-  seededPick?: boolean;
-  coinFlipMode?: 'random' | 'seeded' | 'choose-team';
-  steps?: { team: 'a' | 'b'; type: 'ban' | 'pick' | 'side'; forPickIndex?: number; forDecider?: boolean }[];
+  firstActorMode: FirstActorMode;
+  steps?: {
+    team: 'a' | 'b';
+    type: 'ban' | 'pick' | 'side';
+    forPickIndex?: number;
+    forDecider?: boolean;
+  }[];
   pickBanTimerSeconds?: number | null;
   sideTimerSeconds?: number | null;
   timerEnforcement?: 'none' | 'random-after-timeout';

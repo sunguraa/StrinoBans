@@ -1,14 +1,18 @@
-﻿"use client";
+'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as Y from "yjs";
-import { createCollabSession, destroyCollabSession, type CollabState } from "./provider";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Y from 'yjs';
+import {
+  createCollabSession,
+  destroyCollabSession,
+  type CollabState,
+} from './provider';
 import {
   getRemoteAwareness,
   setLocalAwareness,
   updateSelectedMap,
   type VetoAwarenessUser,
-} from "./awareness";
+} from './awareness';
 import {
   getVetoMaps,
   seedMeta,
@@ -19,28 +23,40 @@ import {
   setTeamName,
   getReadyState,
   setReady,
-  getCoinFlip,
-  setCoinFlip,
+  getFirstActorResult,
+  setFirstActorResult,
   setTeamIntent,
   getTeamIntents,
   clearLocalIntents,
   type SessionMeta,
   type TeamIntent,
-} from "./sync";
+} from './sync';
 import {
   deriveVetoState,
   validateAction,
+  canStartFirstActorFlip,
+  startCoinFlip,
+  resolveCoinflipChoice,
   type ConfirmedAction,
   type VetoState,
-  type CoinFlipResult,
-} from "@/lib/state-machine";
-import type { Team, Side, MapId } from "@/types/veto";
-import { getRoleFromToken, generateSessionLinks, type SessionLinks } from "@/lib/token";
-import { getSessionConfig } from "@/lib/storage";
-import { playBeep, playCoinFlipSound, playActionSound, playTurnSound } from "@/lib/sound";
-import { getUserIdentity } from "@/lib/identity";
+  type FirstActorResult,
+} from '@/lib/state-machine';
+import type { Team, Side, MapId } from '@/types/veto';
+import {
+  getRoleFromToken,
+  generateSessionLinks,
+  type SessionLinks,
+} from '@/lib/token';
+import { getSessionConfig } from '@/lib/storage';
+import {
+  playBeep,
+  playCoinFlipSound,
+  playActionSound,
+  playTurnSound,
+} from '@/lib/sound';
+import { getUserIdentity } from '@/lib/identity';
 
-const LOCAL_ORIGIN = "local-veto";
+const LOCAL_ORIGIN = 'local-veto';
 
 export interface UseVetoSessionOptions {
   sessionId: string | null | undefined;
@@ -51,14 +67,14 @@ export interface VetoSession {
   loading: boolean;
   isConnected: boolean;
   peerCount: number;
-  role: Team | "spectator";
-  displayRole: Team | "spectator";
+  role: Team | 'spectator';
+  displayRole: Team | 'spectator';
   isHost: boolean;
   teamNames: Record<Team, string>;
   readyState: Record<Team, boolean>;
   actions: ConfirmedAction[];
   vetoState: VetoState;
-  coinFlip: CoinFlipResult | null;
+  firstActorResult: FirstActorResult | null;
   meta: SessionMeta | null;
   shareLinks: SessionLinks | null;
   selectedMapId: string | null;
@@ -71,11 +87,13 @@ export interface VetoSession {
   selectMap: (mapId: string | null) => void;
   submitMapAction: (mapId: string) => void;
   submitSide: (side: Side) => void;
-  flipCoin: () => void;
-  chooseSeededFirstActor: (firstActor: Team) => void;
+  chooseFirstActor: (firstActor: Team) => void;
 }
 
-export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): VetoSession {
+export function useVetoSession({
+  sessionId,
+  token,
+}: UseVetoSessionOptions): VetoSession {
   const identity = useMemo(() => getUserIdentity(), []);
 
   const [loading, setLoading] = useState(true);
@@ -83,11 +101,23 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
   const [peerCount, setPeerCount] = useState(0);
   const [meta, setMeta] = useState<SessionMeta | null>(null);
   const [actions, setActions] = useState<ConfirmedAction[]>([]);
-  const [teamNames, setTeamNames] = useState<Record<Team, string>>({ a: "Team A", b: "Team B" });
-  const [readyState, setReadyState] = useState<Record<Team, boolean>>({ a: false, b: false });
-  const [coinFlip, setCoinFlipState] = useState<CoinFlipResult | null>(null);
-  const [intents, setIntents] = useState<{ teamA: TeamIntent[]; teamB: TeamIntent[] }>({ teamA: [], teamB: [] });
-  const [remoteUsers, setRemoteUsers] = useState<Map<number, VetoAwarenessUser>>(new Map());
+  const [teamNames, setTeamNames] = useState<Record<Team, string>>({
+    a: 'Team A',
+    b: 'Team B',
+  });
+  const [readyState, setReadyState] = useState<Record<Team, boolean>>({
+    a: false,
+    b: false,
+  });
+  const [firstActorResult, setFirstActorResultState] =
+    useState<FirstActorResult | null>(null);
+  const [intents, setIntents] = useState<{
+    teamA: TeamIntent[];
+    teamB: TeamIntent[];
+  }>({ teamA: [], teamB: [] });
+  const [remoteUsers, setRemoteUsers] = useState<
+    Map<number, VetoAwarenessUser>
+  >(new Map());
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
   const [localName, setLocalName] = useState(identity.name);
 
@@ -97,24 +127,31 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
   const lastReadyRef = useRef<Record<Team, boolean>>({ a: false, b: false });
 
   const role = useMemo(() => {
-    if (!meta || !token) return "spectator";
+    if (!meta || !token) return 'spectator';
     return getRoleFromToken(token, meta.teamAToken, meta.teamBToken);
   }, [meta, token]);
 
   const displayRole = useMemo(() => role, [role]);
 
-  const isHost = useMemo(() => role === "a", [role]);
+  const isHost = useMemo(() => role === 'a', [role]);
 
   const vetoState = useMemo(
-    () => deriveVetoState(meta?.format ?? "bo1", meta?.mapPool ?? [], actions, coinFlip?.winner ?? null, meta?.steps),
-    [meta, actions, coinFlip],
+    () =>
+      deriveVetoState(
+        meta?.format ?? 'bo1',
+        meta?.mapPool ?? [],
+        actions,
+        firstActorResult?.firstActor ?? null,
+        meta?.steps
+      ),
+    [meta, actions, firstActorResult]
   );
 
   // Play a turn cue when it becomes the local player's turn.
   const lastTurnActorRef = useRef<Team | null>(null);
   useEffect(() => {
     const currentStep = vetoState.currentStep;
-    if (role !== "spectator" && currentStep && currentStep.team === role) {
+    if (role !== 'spectator' && currentStep && currentStep.team === role) {
       if (lastTurnActorRef.current !== role) {
         playTurnSound();
       }
@@ -123,8 +160,11 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
   }, [vetoState.currentStep, role]);
 
   const shareLinks = useMemo(
-    () => (meta ? generateSessionLinks(meta.sessionId, meta.teamAToken, meta.teamBToken) : null),
-    [meta],
+    () =>
+      meta
+        ? generateSessionLinks(meta.sessionId, meta.teamAToken, meta.teamBToken)
+        : null,
+    [meta]
   );
 
   // Refs for latest state inside callbacks/effects. Synced in an effect rather
@@ -133,24 +173,29 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
   const roleRef = useRef(role);
   const metaRef = useRef(meta);
   const actionsRef = useRef(actions);
-  const coinFlipRef = useRef(coinFlip);
+  const firstActorResultRef = useRef(firstActorResult);
+  const readyStateRef = useRef(readyState);
   const vetoStateRef = useRef(vetoState);
   const localNameRef = useRef(localName);
   useEffect(() => {
     roleRef.current = role;
     metaRef.current = meta;
     actionsRef.current = actions;
-    coinFlipRef.current = coinFlip;
+    firstActorResultRef.current = firstActorResult;
+    readyStateRef.current = readyState;
     vetoStateRef.current = vetoState;
     localNameRef.current = localName;
   });
 
-  const updateRemoteUsers = useCallback((awareness: CollabState["awareness"]) => {
-    if (!mountedRef.current) return;
-    const users = getRemoteAwareness(awareness);
-    setRemoteUsers(new Map(users));
-    setPeerCount(users.size);
-  }, []);
+  const updateRemoteUsers = useCallback(
+    (awareness: CollabState['awareness']) => {
+      if (!mountedRef.current) return;
+      const users = getRemoteAwareness(awareness);
+      setRemoteUsers(new Map(users));
+      setPeerCount(users.size);
+    },
+    []
+  );
 
   const syncAllState = useCallback((doc: Y.Doc) => {
     if (!mountedRef.current) return;
@@ -158,8 +203,11 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
     setActions(getActions(doc));
     setTeamNames(getTeamNames(doc));
     setReadyState(getReadyState(doc));
-    setCoinFlipState(getCoinFlip(doc));
-    setIntents({ teamA: getTeamIntents(doc, "a"), teamB: getTeamIntents(doc, "b") });
+    setFirstActorResultState(getFirstActorResult(doc));
+    setIntents({
+      teamA: getTeamIntents(doc, 'a'),
+      teamB: getTeamIntents(doc, 'b'),
+    });
   }, []);
 
   const refreshAwareness = useCallback(() => {
@@ -181,7 +229,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
   useEffect(() => {
     const session = sessionRef.current;
     const currentRole = roleRef.current;
-    if (!session || currentRole === "spectator") return;
+    if (!session || currentRole === 'spectator') return;
     setTeamIntent(session.doc, currentRole, {
       clientId: session.awareness.clientID,
       team: currentRole,
@@ -251,19 +299,18 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
           if (config?.teamAToken && config.teamBToken) {
             const metaValue: SessionMeta = {
               sessionId,
-              presetId: config.presetId ?? "default-bo1",
+              presetId: config.presetId ?? 'default-bo1',
               mapPool: config.mapPool ?? [],
-              format: (config.format as SessionMeta["format"]) ?? "bo1",
-              ruleset: config.ruleset ?? "default",
+              format: (config.format as SessionMeta['format']) ?? 'bo1',
+              ruleset: config.ruleset ?? 'default',
               createdAt: new Date().toISOString(),
               teamAToken: config.teamAToken,
               teamBToken: config.teamBToken,
-              seededPick: config.seededPick ?? false,
-              coinFlipMode: config.coinFlipMode ?? "random",
+              firstActorMode: config.firstActorMode,
               steps: config.steps,
               pickBanTimerSeconds: config.pickBanTimerSeconds ?? null,
               sideTimerSeconds: config.sideTimerSeconds ?? null,
-              timerEnforcement: config.timerEnforcement ?? "none",
+              timerEnforcement: config.timerEnforcement ?? 'none',
               roomImportCode: config.roomImportCode,
             };
             seedMeta(session.doc, metaValue);
@@ -286,28 +333,32 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
         const readyObserver = () => {
           const next = getReadyState(session.doc);
           setReadyState(next);
-          (["a", "b"] as Team[]).forEach((team) => {
+          (['a', 'b'] as Team[]).forEach((team) => {
             if (next[team] && !lastReadyRef.current[team]) playBeep();
           });
           lastReadyRef.current = next;
         };
-        const coinObserver = () => setCoinFlipState(getCoinFlip(session.doc));
+        const firstActorObserver = () =>
+          setFirstActorResultState(getFirstActorResult(session.doc));
         const intentObserver = () =>
-          setIntents({ teamA: getTeamIntents(session.doc, "a"), teamB: getTeamIntents(session.doc, "b") });
+          setIntents({
+            teamA: getTeamIntents(session.doc, 'a'),
+            teamB: getTeamIntents(session.doc, 'b'),
+          });
         const awarenessHandler = () => updateRemoteUsers(session.awareness);
 
         maps.meta.observe(metaObserver);
         maps.actions.observe(actionsObserver);
         maps.teamNames.observe(teamNamesObserver);
         maps.readyState.observe(readyObserver);
-        maps.coinFlip.observe(coinObserver);
+        maps.firstActorResult.observe(firstActorObserver);
         maps.teamAIntent.observe(intentObserver);
         maps.teamBIntent.observe(intentObserver);
-        session.awareness.on("change", awarenessHandler);
+        session.awareness.on('change', awarenessHandler);
 
         if (!cancelled) setLoading(false);
       } catch (error) {
-        console.error("[StrinoBans] Failed to start veto session", error);
+        console.error('[StrinoBans] Failed to start veto session', error);
         if (!cancelled) setLoading(false);
       }
     })();
@@ -325,22 +376,34 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
 
   useEffect(() => {
     const handler = () => stopSession({ immediate: true });
-    window.addEventListener("pagehide", handler);
-    window.addEventListener("beforeunload", handler);
+    window.addEventListener('pagehide', handler);
+    window.addEventListener('beforeunload', handler);
     return () => {
-      window.removeEventListener("pagehide", handler);
-      window.removeEventListener("beforeunload", handler);
+      window.removeEventListener('pagehide', handler);
+      window.removeEventListener('beforeunload', handler);
     };
   }, [stopSession]);
 
   const submitConfirmedAction = useCallback(
-    (action: Omit<ConfirmedAction, "id" | "confirmedAt" | "confirmedByClientId">) => {
+    (
+      action: Omit<
+        ConfirmedAction,
+        'id' | 'confirmedAt' | 'confirmedByClientId'
+      >
+    ) => {
       const session = sessionRef.current;
       const currentMeta = metaRef.current;
       const currentActions = actionsRef.current;
-      const currentCoin = coinFlipRef.current;
+      const currentFirstActorResult = firstActorResultRef.current;
       const currentRole = roleRef.current;
-      if (!session || !currentMeta || currentRole === "spectator") return;
+      if (
+        !session ||
+        !currentMeta ||
+        currentRole === 'spectator' ||
+        !currentFirstActorResult?.firstActor
+      ) {
+        return;
+      }
 
       const fullAction: ConfirmedAction = {
         ...action,
@@ -355,11 +418,11 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
         currentMeta.mapPool,
         currentActions,
         currentRole,
-        currentCoin?.winner ?? null,
-        currentMeta.steps,
+        currentFirstActorResult?.firstActor ?? null,
+        currentMeta.steps
       );
       if (!validation.valid) {
-        console.warn("[StrinoBans] Invalid action", validation.reason);
+        console.warn('[StrinoBans] Invalid action', validation.reason);
         return;
       }
 
@@ -367,29 +430,42 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
         addAction(session.doc, fullAction);
       }, LOCAL_ORIGIN);
     },
-    [],
+    []
   );
 
   const submitMapAction = useCallback(
     (mapId: string) => {
       const step = vetoStateRef.current.currentStep;
-      if (!step || (step.type !== "ban" && step.type !== "pick")) return;
-      submitConfirmedAction({ stepIndex: vetoStateRef.current.currentStepIndex, team: step.team, type: step.type, mapId });
+      if (!step || (step.type !== 'ban' && step.type !== 'pick')) return;
+      submitConfirmedAction({
+        stepIndex: vetoStateRef.current.currentStepIndex,
+        team: step.team,
+        type: step.type,
+        mapId,
+      });
       playActionSound(step.type);
       setSelectedMapId(null);
     },
-    [submitConfirmedAction],
+    [submitConfirmedAction]
   );
 
   const submitSide = useCallback(
     (side: Side) => {
       const step = vetoStateRef.current.currentStep;
-      if (!step || step.type !== "side") return;
-      const mapId = step.forDecider ? vetoStateRef.current.deciderMap ?? undefined : undefined;
-      submitConfirmedAction({ stepIndex: vetoStateRef.current.currentStepIndex, team: step.team, type: "side", side, mapId });
-      playActionSound("side");
+      if (!step || step.type !== 'side') return;
+      const mapId = step.forDecider
+        ? (vetoStateRef.current.deciderMap ?? undefined)
+        : undefined;
+      submitConfirmedAction({
+        stepIndex: vetoStateRef.current.currentStepIndex,
+        team: step.team,
+        type: 'side',
+        side,
+        mapId,
+      });
+      playActionSound('side');
     },
-    [submitConfirmedAction],
+    [submitConfirmedAction]
   );
 
   const selectMap = useCallback((mapId: string | null) => {
@@ -402,7 +478,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
     if (!session || !maps) return;
     updateSelectedMap(session.awareness, selectedMapId);
     const currentRole = roleRef.current;
-    if (currentRole === "a" || currentRole === "b") {
+    if (currentRole === 'a' || currentRole === 'b') {
       setTeamIntent(session.doc, currentRole, {
         clientId: session.awareness.clientID,
         team: currentRole,
@@ -416,73 +492,95 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
   const setTeamNameCallback = useCallback((name: string) => {
     const session = sessionRef.current;
     const currentRole = roleRef.current;
-    if (!session || currentRole === "spectator") return;
+    if (!session || currentRole === 'spectator') return;
     setTeamName(session.doc, currentRole, name);
   }, []);
 
-  const setReadyCallback = useCallback(
-    (ready: boolean) => {
-      const session = sessionRef.current;
-      const currentRole = roleRef.current;
-      if (!session || currentRole === "spectator") return;
-      if (ready) playBeep();
-      setReady(session.doc, currentRole, ready);
-    },
-    [],
-  );
+  const setReadyCallback = useCallback((ready: boolean) => {
+    const session = sessionRef.current;
+    const currentRole = roleRef.current;
+    if (!session || currentRole === 'spectator') return;
+    if (ready) playBeep();
+    setReady(session.doc, currentRole, ready);
+  }, []);
 
   const flipCoin = useCallback(() => {
     const session = sessionRef.current;
-    const currentMeta = metaRef.current;
     if (!session) return;
-    const existing = getCoinFlip(session.doc);
-    if (existing) return;
-    const seed = crypto.randomUUID();
-    const isChooseTeam = currentMeta?.coinFlipMode === "choose-team";
-    const provisionalWinner: Team = Math.random() < 0.5 ? "a" : "b";
-    const result: CoinFlipResult = {
-      winner: provisionalWinner,
-      method: isChooseTeam ? "choose-team" : "coin-flip",
-      seed,
-      rolledAt: new Date().toISOString(),
-      flipWinner: isChooseTeam ? provisionalWinner : undefined,
-      choicePending: isChooseTeam ? true : undefined,
-    };
-    setCoinFlip(session.doc, result);
+
+    const mode = metaRef.current?.firstActorMode;
+    const existing = getFirstActorResult(session.doc);
+    if (
+      !canStartFirstActorFlip(
+        mode,
+        roleRef.current,
+        readyStateRef.current,
+        existing
+      )
+    ) {
+      return;
+    }
+
+    const flipWinner: Team = Math.random() < 0.5 ? 'a' : 'b';
+    const result = startCoinFlip(
+      mode,
+      flipWinner,
+      crypto.randomUUID(),
+      new Date().toISOString()
+    );
+    setFirstActorResult(session.doc, result);
     playCoinFlipSound();
   }, []);
 
-  const chooseSeededFirstActor = useCallback(
-    (firstActor: Team) => {
+  const chooseFirstActor = useCallback((firstActor: Team) => {
+    const session = sessionRef.current;
+    const chooser = roleRef.current;
+    if (!session || chooser === 'spectator') return;
+    const existing = getFirstActorResult(session.doc);
+    if (
+      !existing ||
+      existing.mode !== 'coinflip' ||
+      !existing.choicePending ||
+      existing.flipWinner !== chooser
+    ) {
+      return;
+    }
+    setFirstActorResult(
+      session.doc,
+      resolveCoinflipChoice(
+        existing,
+        chooser,
+        firstActor,
+        new Date().toISOString()
+      )
+    );
+  }, []);
+
+  // Team A finalizes the first actor after both teams are ready.
+  useEffect(() => {
+    if (
+      !meta ||
+      firstActorResult ||
+      !readyState.a ||
+      !readyState.b ||
+      role !== 'a'
+    ) {
+      return;
+    }
+    if (meta.firstActorMode === 'team-a') {
       const session = sessionRef.current;
       if (!session) return;
-      const existing = getCoinFlip(session.doc);
-      const isChooseTeamChoice = existing && existing.method === "choose-team" && existing.choicePending;
-      if (existing && !isChooseTeamChoice) return;
-      const result: CoinFlipResult = {
-        winner: firstActor,
-        method: isChooseTeamChoice ? "choose-team" : "seeded-pick",
-        seed: isChooseTeamChoice ? existing.seed : "seeded",
-        rolledAt: isChooseTeamChoice ? existing.rolledAt : new Date().toISOString(),
-        flipWinner: isChooseTeamChoice ? existing.flipWinner : undefined,
-        choicePending: false,
-      };
-      setCoinFlip(session.doc, result);
-      playCoinFlipSound();
-    },
-    [],
-  );
-
-  // Auto-flip 1-2s after both ready (only Team A token holder triggers)
-  useEffect(() => {
-    const isSeeded = meta?.seededPick || meta?.coinFlipMode === "seeded";
-    if (!meta || coinFlip || isSeeded) return;
-    if (!readyState.a || !readyState.b) return;
-    if (role !== "a") return;
+      setFirstActorResult(session.doc, {
+        firstActor: 'a',
+        mode: 'team-a',
+        resolvedAt: new Date().toISOString(),
+      });
+      return;
+    }
     const delay = 1000 + Math.floor(Math.random() * 1000);
-    const t = setTimeout(() => flipCoin(), delay);
-    return () => clearTimeout(t);
-  }, [readyState, meta, coinFlip, role, flipCoin]);
+    const timer = setTimeout(() => flipCoin(), delay);
+    return () => clearTimeout(timer);
+  }, [readyState, meta, firstActorResult, role, flipCoin]);
 
   // Timer enforcement lives in the <Timer> component (the visible countdown is the
   // single source of truth). It only fires on the acting team's client, so no
@@ -501,7 +599,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
       readyState,
       actions,
       vetoState,
-      coinFlip,
+      firstActorResult,
       meta,
       shareLinks,
       selectedMapId,
@@ -514,8 +612,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
       selectMap,
       submitMapAction,
       submitSide,
-      flipCoin,
-      chooseSeededFirstActor,
+      chooseFirstActor,
     }),
     [
       loading,
@@ -528,7 +625,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
       readyState,
       actions,
       vetoState,
-      coinFlip,
+      firstActorResult,
       meta,
       shareLinks,
       selectedMapId,
@@ -540,12 +637,7 @@ export function useVetoSession({ sessionId, token }: UseVetoSessionOptions): Vet
       selectMap,
       submitMapAction,
       submitSide,
-      flipCoin,
-      chooseSeededFirstActor,
-    ],
+      chooseFirstActor,
+    ]
   );
 }
-
-
-
-

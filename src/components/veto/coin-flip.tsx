@@ -2,16 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import type { Team } from '@/types/veto';
-import type { CoinFlipResult } from '@/lib/state-machine';
+import type { FirstActorResult } from '@/lib/state-machine';
 
 interface CoinFlipProps {
   teamNames: Record<Team, string>;
-  coinFlip: CoinFlipResult | null;
-  seededPick?: boolean;
-  role: Team | 'spectator';
-  onChooseFirstActor?: (firstActor: Team) => void;  // seededPick mode only
+  result: FirstActorResult | null;
   onRevealComplete?: () => void;
 }
 
@@ -44,10 +40,7 @@ function CoinFace({
 
 export function CoinFlip({
   teamNames,
-  coinFlip,
-  seededPick,
-  role,
-  onChooseFirstActor,
+  result,
   onRevealComplete,
 }: CoinFlipProps) {
   const [phase, setPhase] = useState<Phase>('waiting');
@@ -57,7 +50,7 @@ export function CoinFlip({
   });
 
   useEffect(() => {
-    if (!coinFlip) {
+    if (!result) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPhase('waiting');
       return;
@@ -68,7 +61,7 @@ export function CoinFlip({
       const t1 = setTimeout(() => setPhase('revealed'), SETTLE_MS);
       // When choice is pending the board takes over — transition faster so the
       // interactive UI appears promptly. Otherwise hold the result on screen.
-      const holdMs = coinFlip.choicePending ? 800 : HOLD_MS;
+      const holdMs = result.choicePending ? 800 : HOLD_MS;
       const t2 = setTimeout(() => onRevealRef.current?.(), SETTLE_MS + holdMs);
       return () => {
         clearTimeout(t1);
@@ -76,49 +69,13 @@ export function CoinFlip({
       };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coinFlip?.seed]);
+  }, [result?.flipSeed]);
 
-  // Seeded pick: Team A chooses the first mover instead of a coin flip.
-  if (seededPick && !coinFlip) {
-    if (role !== 'a') {
-      return (
-        <Card className="w-full max-w-md p-6 text-center">
-          <p className="text-sm text-muted-foreground">
-            Waiting for {teamNames.a} to choose the first mover…
-          </p>
-        </Card>
-      );
-    }
-    return (
-      <Card className="w-full max-w-md space-y-4 p-6 text-center">
-        <h2 className="font-serif text-2xl font-medium">Seeded pick</h2>
-        <p className="text-sm text-muted-foreground">
-          Choose who picks/bans first.
-        </p>
-        <div className="flex justify-center gap-3">
-          <Button
-            type="button"
-            onClick={() => onChooseFirstActor?.('a')}
-            aria-label={`${teamNames.a} first`}
-          >
-            {teamNames.a} first
-          </Button>
-          <Button
-            type="button"
-            onClick={() => onChooseFirstActor?.('b')}
-            aria-label={`${teamNames.b} first`}
-          >
-            {teamNames.b} first
-          </Button>
-        </div>
-      </Card>
-    );
-  }
-
-  const winner = coinFlip?.winner ?? 'a';
-  // Land on the winner's face: front = Team A, back (180°) = Team B. Add full
-  // turns so the settle reads as a real spin.
-  const restTransform = `rotateY(${1440 + (winner === 'b' ? 180 : 0)}deg)`;
+  const firstActor = result?.firstActor ?? 'a';
+  const flipWinner = result?.flipWinner ?? firstActor;
+  // Land on the flip winner's face: front = Team A, back (180°) = Team B. Add
+  // full turns so the settle reads as a real spin.
+  const restTransform = `rotateY(${1440 + (flipWinner === 'b' ? 180 : 0)}deg)`;
 
   const spinning = phase === 'settling';
   return (
@@ -139,7 +96,7 @@ export function CoinFlip({
           aria-label={
             spinning
               ? 'Flipping coin'
-              : `${winner === 'a' ? teamNames.a : teamNames.b} won the flip`
+              : `${flipWinner === 'a' ? teamNames.a : teamNames.b} won the flip`
           }
         >
           <CoinFace label="A" sub={teamNames.a} />
@@ -148,28 +105,28 @@ export function CoinFlip({
       </div>
 
       <div className="min-h-12 h-auto w-full">
-        {phase === 'revealed' && coinFlip ? (
-          coinFlip.choicePending ? (
+        {phase === 'revealed' && result ? (
+          result.choicePending ? (
             // Choice is pending — show brief result only; choice UI lives in the board
             <div className="space-y-1" aria-live="polite">
               <div className="text-xl font-semibold">
-                {coinFlip.flipWinner === 'a' ? teamNames.a : teamNames.b}{' '}
+                {result.flipWinner === 'a' ? teamNames.a : teamNames.b}{' '}
                 <span className="text-muted-foreground">won the flip</span>
               </div>
-              <p className="text-xs text-muted-foreground">Choosing first mover…</p>
+              <p className="text-xs text-muted-foreground">
+                Choosing first mover…
+              </p>
             </div>
           ) : (
             <div className="space-y-1" aria-live="polite">
               <div className="text-xl font-semibold">
-                {winner === 'a' ? teamNames.a : teamNames.b}{' '}
+                {firstActor === 'a' ? teamNames.a : teamNames.b}{' '}
                 <span className="text-muted-foreground">goes first</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                {coinFlip.method === 'seeded-pick'
-                  ? 'Seeded — chosen by Team A'
-                  : coinFlip.method === 'choose-team'
-                    ? `Choose Team — picked by ${coinFlip.flipWinner === 'a' ? teamNames.a : teamNames.b}`
-                    : 'Random coin flip'}
+                {result.mode === 'coinflip'
+                  ? `Coin-flip winner: ${result.flipWinner === 'a' ? teamNames.a : teamNames.b}`
+                  : 'Random coin flip'}
               </p>
             </div>
           )

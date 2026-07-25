@@ -15,8 +15,7 @@
     "space-lab",
     "windy-town"
   ],
-  "seededPick": false,
-  "coinFlipMode": "choose-team",
+  "firstActorMode": "coinflip",
   "steps": [
     { "team": "a", "type": "ban" },
     { "team": "b", "type": "ban" },

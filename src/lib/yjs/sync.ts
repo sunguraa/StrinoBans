@@ -1,6 +1,6 @@
-import * as Y from "yjs";
-import type { Format, Team } from "@/types/veto";
-import type { ConfirmedAction, CoinFlipResult } from "@/lib/state-machine";
+import * as Y from 'yjs';
+import type { FirstActorMode, Format, Team } from '@/types/veto';
+import type { ConfirmedAction, FirstActorResult } from '@/lib/state-machine';
 
 export interface SessionMeta {
   sessionId: string;
@@ -11,12 +11,16 @@ export interface SessionMeta {
   createdAt: string;
   teamAToken: string;
   teamBToken: string;
-  seededPick?: boolean;
-  coinFlipMode?: "random" | "seeded" | "choose-team";
-  steps?: { team: "a" | "b"; type: "ban" | "pick" | "side"; forPickIndex?: number; forDecider?: boolean }[];
+  firstActorMode: FirstActorMode;
+  steps?: {
+    team: 'a' | 'b';
+    type: 'ban' | 'pick' | 'side';
+    forPickIndex?: number;
+    forDecider?: boolean;
+  }[];
   pickBanTimerSeconds?: number | null;
   sideTimerSeconds?: number | null;
-  timerEnforcement?: "none" | "random-after-timeout";
+  timerEnforcement?: 'none' | 'random-after-timeout';
   roomImportCode?: string;
 }
 
@@ -35,10 +39,10 @@ export interface VetoYjsMaps {
   teamBIntent: Y.Map<string>;
   teamNames: Y.Map<string>;
   readyState: Y.Map<string>;
-  coinFlip: Y.Map<string>;
+  firstActorResult: Y.Map<string>;
 }
 
-const LOCAL_ORIGIN = "local-veto";
+const LOCAL_ORIGIN = 'local-veto';
 
 function parseJson<T>(value: string | undefined): T | null {
   if (!value) return null;
@@ -51,26 +55,26 @@ function parseJson<T>(value: string | undefined): T | null {
 
 export function getVetoMaps(doc: Y.Doc): VetoYjsMaps {
   return {
-    meta: doc.getMap<string>("meta"),
-    actions: doc.getArray<string>("actions"),
-    teamAIntent: doc.getMap<string>("teamAIntent"),
-    teamBIntent: doc.getMap<string>("teamBIntent"),
-    teamNames: doc.getMap<string>("teamNames"),
-    readyState: doc.getMap<string>("readyState"),
-    coinFlip: doc.getMap<string>("coinFlip"),
+    meta: doc.getMap<string>('meta'),
+    actions: doc.getArray<string>('actions'),
+    teamAIntent: doc.getMap<string>('teamAIntent'),
+    teamBIntent: doc.getMap<string>('teamBIntent'),
+    teamNames: doc.getMap<string>('teamNames'),
+    readyState: doc.getMap<string>('readyState'),
+    firstActorResult: doc.getMap<string>('firstActorResult'),
   };
 }
 
 export function seedMeta(doc: Y.Doc, meta: SessionMeta): void {
   const maps = getVetoMaps(doc);
   doc.transact(() => {
-    maps.meta.set("value", JSON.stringify(meta));
+    maps.meta.set('value', JSON.stringify(meta));
   }, LOCAL_ORIGIN);
 }
 
 export function getMeta(doc: Y.Doc): SessionMeta | null {
   const maps = getVetoMaps(doc);
-  return parseJson<SessionMeta>(maps.meta.get("value"));
+  return parseJson<SessionMeta>(maps.meta.get('value'));
 }
 
 export function addAction(doc: Y.Doc, action: ConfirmedAction): void {
@@ -100,8 +104,8 @@ export function setTeamName(doc: Y.Doc, team: Team, name: string): void {
 export function getTeamNames(doc: Y.Doc): Record<Team, string> {
   const maps = getVetoMaps(doc);
   return {
-    a: maps.teamNames.get("a") ?? "Team A",
-    b: maps.teamNames.get("b") ?? "Team B",
+    a: maps.teamNames.get('a') ?? 'Team A',
+    b: maps.teamNames.get('b') ?? 'Team B',
   };
 }
 
@@ -115,26 +119,33 @@ export function setReady(doc: Y.Doc, team: Team, ready: boolean): void {
 export function getReadyState(doc: Y.Doc): Record<Team, boolean> {
   const maps = getVetoMaps(doc);
   return {
-    a: maps.readyState.get("a") === "true",
-    b: maps.readyState.get("b") === "true",
+    a: maps.readyState.get('a') === 'true',
+    b: maps.readyState.get('b') === 'true',
   };
 }
 
-export function setCoinFlip(doc: Y.Doc, result: CoinFlipResult): void {
+export function setFirstActorResult(
+  doc: Y.Doc,
+  result: FirstActorResult
+): void {
   const maps = getVetoMaps(doc);
   doc.transact(() => {
-    maps.coinFlip.set("value", JSON.stringify(result));
+    maps.firstActorResult.set('value', JSON.stringify(result));
   }, LOCAL_ORIGIN);
 }
 
-export function getCoinFlip(doc: Y.Doc): CoinFlipResult | null {
+export function getFirstActorResult(doc: Y.Doc): FirstActorResult | null {
   const maps = getVetoMaps(doc);
-  return parseJson<CoinFlipResult>(maps.coinFlip.get("value"));
+  return parseJson<FirstActorResult>(maps.firstActorResult.get('value'));
 }
 
-export function setTeamIntent(doc: Y.Doc, team: Team, intent: TeamIntent): void {
+export function setTeamIntent(
+  doc: Y.Doc,
+  team: Team,
+  intent: TeamIntent
+): void {
   const maps = getVetoMaps(doc);
-  const target = team === "a" ? maps.teamAIntent : maps.teamBIntent;
+  const target = team === 'a' ? maps.teamAIntent : maps.teamBIntent;
   doc.transact(() => {
     target.set(String(intent.clientId), JSON.stringify(intent));
   }, LOCAL_ORIGIN);
@@ -142,7 +153,7 @@ export function setTeamIntent(doc: Y.Doc, team: Team, intent: TeamIntent): void 
 
 export function getTeamIntents(doc: Y.Doc, team: Team): TeamIntent[] {
   const maps = getVetoMaps(doc);
-  const target = team === "a" ? maps.teamAIntent : maps.teamBIntent;
+  const target = team === 'a' ? maps.teamAIntent : maps.teamBIntent;
   const intents: TeamIntent[] = [];
   target.forEach((value) => {
     const parsed = parseJson<TeamIntent>(value);
