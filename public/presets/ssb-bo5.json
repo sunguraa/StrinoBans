@@ -2,7 +2,7 @@
   "id": "ssb-bo5",
   "name": "Super Stringify Brawl — Bo5",
   "author": "areeb",
-  "description": "Best of 5 — one ban, 4 picks, one ban, one pick. Lower seed sets first mover.",
+  "description": "The lower-seeded team starts. Teams ban one map, pick four maps, then ban one more. The other team picks the side for each picked map. The starting team picks the side for the final map.",
   "updatedAt": "2026-07-24T00:00:00Z",
   "format": "bo5",
   "ruleset": "default",

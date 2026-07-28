@@ -2,7 +2,7 @@
   "id": "default-bo1",
   "name": "Default — Bo1",
   "author": "sunguraa",
-  "description": "Single map. Teams alternate bans down to one decider; the team that didn't ban last picks side.",
+  "description": "A coin flip decides who starts. Teams alternate bans until one map remains. The team that did not ban last picks the side.",
   "updatedAt": "2026-06-16T00:00:00Z",
   "format": "bo1",
   "ruleset": "default",

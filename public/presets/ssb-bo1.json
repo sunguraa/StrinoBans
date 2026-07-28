@@ -2,7 +2,7 @@
   "id": "ssb-bo1",
   "name": "Super Stringify Brawl — Bo1",
   "author": "areeb",
-  "description": "Single map. Teams alternate bans down to one decider; the team that didn't ban last picks side.",
+  "description": "The lower-seeded team starts. Teams alternate bans until one map remains. The starting team picks the side.",
   "updatedAt": "2026-07-24T00:00:00Z",
   "format": "bo1",
   "ruleset": "default",

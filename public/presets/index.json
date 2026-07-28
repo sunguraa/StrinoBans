@@ -5,7 +5,7 @@
       "id": "default",
       "name": "Default",
       "author": "StrinoBans Team",
-      "description": "The standard StrinoBans ruleset - full 8-map Season 3 pool, alternating ban/pick with a coin flip for first mover. Pick the series length below.",
+      "description": "Bo1, Bo3, Bo5, and Bo7 use the eight-map Season 3 pool. A coin flip decides who starts.",
       "updatedAt": "2026-06-17T00:00:00Z",
       "stages": [
         { "format": "bo1", "presetId": "default-bo1" },
@@ -15,22 +15,21 @@
       ]
     },
     {
-      "id": "papercut-series",
-      "name": "Papercut Series",
-      "author": "idol_val",
-      "description": "Papercut Series ruleset. A coin is flipped, and the winner decides who goes first. 7-map ruleset with Cosmite and Port Euler removed. Bo1, Bo3, and Bo5 stages.",
-      "updatedAt": "2026-06-22T00:00:00Z",
+      "id": "krihcity-nostalgia-cup",
+      "name": "Krihcity Nostalgia Cup",
+      "author": "krihcity",
+      "description": "Bo1 and Bo3 use a seven-map pool. The coin-flip winner chooses who starts. Lebrun City and Ocarnus are not in the pool.",
+      "updatedAt": "2026-07-27T00:00:00Z",
       "stages": [
-        { "format": "bo1", "presetId": "papercut-bo1" },
-        { "format": "bo3", "presetId": "papercut-bo3" },
-        { "format": "bo5", "presetId": "papercut-bo5" }
+        { "format": "bo1", "presetId": "krihcity-nostalgia-cup-bo1" },
+        { "format": "bo3", "presetId": "krihcity-nostalgia-cup-bo3" }
       ]
     },
     {                                                                                                                                                           
      "id": "super-stringify-brawl",
      "name": "Super Stringify Brawl",
      "author": "areeb",
-     "description": "Super Stringify Brawl ruleset. Lower seed (Team A) goes first. Seven-map pool with Bo1, Bo3, and Bo5 stages.",
+     "description": "Bo1, Bo3, and Bo5 use a seven-map pool. The lower-seeded team starts.",
      "updatedAt": "2026-07-24T00:00:00Z",
      "stages": [
        { "format": "bo1", "presetId": "ssb-bo1" },

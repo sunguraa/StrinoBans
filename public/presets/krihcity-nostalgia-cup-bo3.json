@@ -1,0 +1,24 @@
+{
+  "id": "krihcity-nostalgia-cup-bo3",
+  "name": "Krihcity Nostalgia Cup - Bo3",
+  "author": "krihcity",
+  "description": "The coin-flip winner chooses who starts. Each team bans one map. Each team then picks one map, and the other team picks the side. Each team bans one more map. The starting team picks the side for the final map.",
+  "updatedAt": "2026-07-27T00:00:00Z",
+  "format": "bo3",
+  "ruleset": "default",
+  "mapPool": [
+    "area-88",
+    "base-404",
+    "cauchy-street",
+    "cosmite",
+    "port-euler",
+    "space-lab",
+    "windy-town"
+  ],
+  "firstActorMode": "coinflip",
+  "pickBanTimerSeconds": 50,
+  "sideTimerSeconds": 35,
+  "timerEnforcement": "random-after-timeout",
+  "roomImportCode": "8HKAGV",
+  "notes": "7-map pool excluding Lebrun City and Ocarnus."
+}

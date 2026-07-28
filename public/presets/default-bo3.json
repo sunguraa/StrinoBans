@@ -2,7 +2,7 @@
   "id": "default-bo3",
   "name": "Default — Bo3",
   "author": "sunguraa",
-  "description": "Best of 3 — two picks plus a decider, bans trim the pool. Coin flip sets first mover.",
+  "description": "A coin flip decides who starts. Teams ban two maps, pick two maps, then ban three more. The other team picks the side for each picked map. The team that did not ban last picks the side for the final map.",
   "updatedAt": "2026-06-16T00:00:00Z",
   "format": "bo3",
   "ruleset": "default",

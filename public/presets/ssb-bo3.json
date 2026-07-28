@@ -2,7 +2,7 @@
   "id": "ssb-bo3",
   "name": "Super Stringify Brawl — Bo3",
   "author": "areeb",
-  "description": "Best of three - 2 bans, 2 picks, 2 bans, 1 pick. Lower seed sets first mover.",
+  "description": "The lower-seeded team starts. Each team bans one map. Each team then picks one map, and the other team picks the side. Each team bans one more map. The starting team picks the side for the final map.",
   "updatedAt": "2026-07-24T00:00:00Z",
   "format": "bo3",
   "ruleset": "default",

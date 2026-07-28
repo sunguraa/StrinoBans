@@ -2,7 +2,7 @@
   "id": "default-bo7",
   "name": "Default — Bo7",
   "author": "sunguraa",
-  "description": "Best of 7 — six picks plus a decider, starting with picks to offset banning advantage.",
+  "description": "A coin flip decides who starts. Teams pick six maps, then ban one map. The other team picks the side for each picked map. The team that does not ban picks the side for the final map.",
   "updatedAt": "2026-06-16T00:00:00Z",
   "format": "bo7",
   "ruleset": "default",

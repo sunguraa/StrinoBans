@@ -2,7 +2,7 @@
   "id": "default-bo5",
   "name": "Default — Bo5",
   "author": "sunguraa",
-  "description": "Best of 5 — four picks plus a decider, bans trim the pool. Coin flip sets first mover.",
+  "description": "A coin flip decides who starts. Teams ban one map, pick four maps, then ban two more. The other team picks the side for each picked map. The team that did not ban last picks the side for the final map.",
   "updatedAt": "2026-06-16T00:00:00Z",
   "format": "bo5",
   "ruleset": "default",
