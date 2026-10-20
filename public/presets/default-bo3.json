@@ -1,25 +1,66 @@
 {
+  "schemaVersion": 1,
   "id": "default-bo3",
   "name": "Default — Bo3",
   "author": "sunguraa",
-  "description": "A coin flip decides who starts. Teams ban two maps, pick two maps, then ban three more. The other team picks the side for each picked map. The team that did not ban last picks the side for the final map.",
-  "updatedAt": "2026-06-16T00:00:00Z",
+  "description": "Best of 3 — two picks plus a decider, bans trim the pool.",
+  "updatedAt": "2026-10-19T00:00:00Z",
   "format": "bo3",
   "ruleset": "default",
+  "sequencePattern": "standard",
   "mapPool": [
     "area-88",
     "base-404",
     "cauchy-street",
-    "cosmite",
-    "le-brun-city",
-    "ocarnus",
     "space-lab",
-    "windy-town"
+    "windy-town",
+    "ocarnus",
+    "le-brun-city"
   ],
-  "firstActorMode": "random",
+  "firstActorMode": "coinflip",
+  "steps": [
+    {
+      "team": "a",
+      "type": "ban"
+    },
+    {
+      "team": "b",
+      "type": "ban"
+    },
+    {
+      "team": "a",
+      "type": "pick"
+    },
+    {
+      "team": "b",
+      "type": "side",
+      "forPickIndex": 0
+    },
+    {
+      "team": "b",
+      "type": "pick"
+    },
+    {
+      "team": "a",
+      "type": "side",
+      "forPickIndex": 1
+    },
+    {
+      "team": "a",
+      "type": "ban"
+    },
+    {
+      "team": "b",
+      "type": "ban"
+    },
+    {
+      "team": "a",
+      "type": "side",
+      "forDecider": true
+    }
+  ],
   "pickBanTimerSeconds": 50,
   "sideTimerSeconds": 35,
   "timerEnforcement": "random-after-timeout",
-  "roomImportCode": "40GE0I",
-  "notes": "Port Euler excluded from Season 3 ranked pool. 5 bans + 2 picks = 7 maps touched, 1 decider."
+  "notes": "Default pool; not an independently verified official ranked pool. Cosmite and Port Euler remain available for custom pools. No verified game import code supplied."
 }

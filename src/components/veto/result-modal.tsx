@@ -1,46 +1,60 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { MAP_POOL } from "@/lib/maps";
-import { getCachedIntroPath } from "@/lib/wiki/cache";
-import { cn } from "@/lib/utils";
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { MAP_POOL } from '@/lib/maps';
+import { getCachedIntroPath } from '@/lib/wiki/cache';
+import { cn } from '@/lib/utils';
 import {
   buildResultImageDataFromSummary,
   copyVetoResultImage,
   formatLabel,
-} from "@/lib/result-image";
-import { downloadSessionTranscript, type SessionSummary } from "@/lib/storage";
-import type { Side } from "@/types/veto";
+} from '@/lib/result-image';
+import { downloadSessionTranscript, type SessionSummary } from '@/lib/storage';
+import type { Side } from '@/types/veto';
+import { RulesSummary } from './rules-summary';
 
-const opposite = (side: Side): Side => (side === "attacker" ? "defender" : "attacker");
+const opposite = (side: Side): Side =>
+  side === 'attacker' ? 'defender' : 'attacker';
 
 function SideTag({ team, side }: { team: string; side: Side }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium",
-        side === "attacker"
-          ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
-          : "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium',
+        side === 'attacker'
+          ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+          : 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
       )}
     >
       <span className="truncate">{team}</span>
-      <span className="font-mono font-bold uppercase">{side === "attacker" ? "ATK" : "DEF"}</span>
+      <span className="font-mono font-bold uppercase">
+        {side === 'attacker' ? 'ATK' : 'DEF'}
+      </span>
     </span>
   );
 }
 
-export function ResultModal({ summary, onClose }: { summary: SessionSummary; onClose: () => void }) {
-  const [imageState, setImageState] = useState<"idle" | "copied" | "downloaded">("idle");
+export function ResultModal({
+  summary,
+  onClose,
+}: {
+  summary: SessionSummary;
+  onClose: () => void;
+}) {
+  const [imageState, setImageState] = useState<
+    'idle' | 'copied' | 'downloaded'
+  >('idle');
   const mapName = (id: string) => MAP_POOL.find((m) => m.id === id)?.name ?? id;
 
   const copyImage = async () => {
     try {
-      const result = await copyVetoResultImage(buildResultImageDataFromSummary(summary));
+      const result = await copyVetoResultImage(
+        buildResultImageDataFromSummary(summary)
+      );
       setImageState(result);
-      setTimeout(() => setImageState("idle"), 1800);
+      setTimeout(() => setImageState('idle'), 1800);
     } catch {
       /* ignore */
     }
@@ -49,10 +63,10 @@ export function ResultModal({ summary, onClose }: { summary: SessionSummary; onC
   const playedIds = new Set(summary.finalResult.map((r) => r.mapId));
   const banned = summary.mapPool.filter((id) => !playedIds.has(id));
 
-  const bannedByMap = new Map<string, "a" | "b" | string>();
+  const bannedByMap = new Map<string, 'a' | 'b' | string>();
   if (summary.actions) {
     summary.actions.forEach((action) => {
-      if (action.type === "ban" && action.mapId) {
+      if (action.type === 'ban' && action.mapId) {
         bannedByMap.set(action.mapId, action.team);
       }
     });
@@ -70,28 +84,58 @@ export function ResultModal({ summary, onClose }: { summary: SessionSummary; onC
           <div>
             <h2 className="font-serif text-2xl font-medium">Veto Result</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {summary.teamAName} vs {summary.teamBName} · {formatLabel(summary.format)}
+              {summary.teamAName} vs {summary.teamBName} ·{' '}
+              {formatLabel(summary.format)}
             </p>
           </div>
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            aria-label="Close"
+          >
             ✕
           </Button>
         </div>
+        {summary.presetSnapshot && (
+          <RulesSummary
+            rules={{
+              ...summary.presetSnapshot,
+              presetName: summary.presetSnapshot.name,
+            }}
+            starter={summary.firstActor ?? undefined}
+            teamNames={{ a: summary.teamAName, b: summary.teamBName }}
+          />
+        )}
 
         <ol className="space-y-2.5">
           {summary.finalResult.map((r, index) => {
             const isDecider = !r.pickedBy;
             const side = (r.side as Side) || null;
-            const teamASide = side ? (r.sidePickedBy === "a" ? side : opposite(side)) : null;
-            const teamBSide = side ? (r.sidePickedBy === "b" ? side : opposite(side)) : null;
-            const pickedByName = r.pickedBy === "a" ? summary.teamAName : r.pickedBy === "b" ? summary.teamBName : "";
+            const teamASide = side
+              ? r.sidePickedBy === 'a'
+                ? side
+                : opposite(side)
+              : null;
+            const teamBSide = side
+              ? r.sidePickedBy === 'b'
+                ? side
+                : opposite(side)
+              : null;
+            const pickedByName =
+              r.pickedBy === 'a'
+                ? summary.teamAName
+                : r.pickedBy === 'b'
+                  ? summary.teamBName
+                  : '';
 
             return (
               <li
                 key={`${r.mapId}-${index}`}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg border bg-card p-3",
-                  isDecider ? "border-side/60" : "border-border",
+                  'flex items-center gap-3 rounded-lg border bg-card p-3',
+                  isDecider ? 'border-side/60' : 'border-border'
                 )}
               >
                 <span className="w-5 shrink-0 text-center font-mono text-lg font-bold tabular-nums">
@@ -104,7 +148,9 @@ export function ResultModal({ summary, onClose }: { summary: SessionSummary; onC
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate font-semibold">{mapName(r.mapId)}</span>
+                    <span className="truncate font-semibold">
+                      {mapName(r.mapId)}
+                    </span>
                     {isDecider && (
                       <span className="shrink-0 rounded bg-side/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-side">
                         Decider
@@ -113,8 +159,10 @@ export function ResultModal({ summary, onClose }: { summary: SessionSummary; onC
                   </div>
                   <div className="truncate text-xs text-muted-foreground">
                     {isDecider
-                      ? `Last map standing${r.sidePickedBy ? ` — Side chosen by ${r.sidePickedBy === "a" ? summary.teamAName : summary.teamBName}` : ""}`
-                      : pickedByName ? `Picked by ${pickedByName}` : ""}
+                      ? `Last map standing${r.sidePickedBy ? ` — Side chosen by ${r.sidePickedBy === 'a' ? summary.teamAName : summary.teamBName}` : ''}`
+                      : pickedByName
+                        ? `Picked by ${pickedByName}`
+                        : ''}
                   </div>
                   {teamASide && teamBSide && (
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -136,7 +184,12 @@ export function ResultModal({ summary, onClose }: { summary: SessionSummary; onC
             <div className="flex flex-wrap gap-1.5">
               {banned.map((id) => {
                 const banner = bannedByMap.get(id);
-                const bannerName = banner === "a" ? summary.teamAName : banner === "b" ? summary.teamBName : undefined;
+                const bannerName =
+                  banner === 'a'
+                    ? summary.teamAName
+                    : banner === 'b'
+                      ? summary.teamBName
+                      : undefined;
                 return (
                   <span
                     key={id}
@@ -145,7 +198,9 @@ export function ResultModal({ summary, onClose }: { summary: SessionSummary; onC
                   >
                     <span className="line-through">{mapName(id)}</span>
                     {bannerName && (
-                      <span className="ml-1 font-mono text-[9px] text-ban">(by {bannerName.slice(0, 8)})</span>
+                      <span className="ml-1 font-mono text-[9px] text-ban">
+                        (by {bannerName.slice(0, 8)})
+                      </span>
                     )}
                   </span>
                 );
@@ -155,8 +210,16 @@ export function ResultModal({ summary, onClose }: { summary: SessionSummary; onC
         )}
 
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button type="button" onClick={copyImage} aria-label="Copy result as image">
-            {imageState === "copied" ? "Copied image!" : imageState === "downloaded" ? "Image downloaded" : "Copy as Image"}
+          <Button
+            type="button"
+            onClick={copyImage}
+            aria-label="Copy result as image"
+          >
+            {imageState === 'copied'
+              ? 'Copied image!'
+              : imageState === 'downloaded'
+                ? 'Image downloaded'
+                : 'Copy as Image'}
           </Button>
           <Button
             type="button"

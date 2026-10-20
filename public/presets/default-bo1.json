@@ -1,25 +1,56 @@
 {
+  "schemaVersion": 1,
   "id": "default-bo1",
   "name": "Default — Bo1",
   "author": "sunguraa",
-  "description": "A coin flip decides who starts. Teams alternate bans until one map remains. The team that did not ban last picks the side.",
-  "updatedAt": "2026-06-16T00:00:00Z",
+  "description": "Single map. Teams alternate bans down to one decider; the team that didn't ban last picks side.",
+  "updatedAt": "2026-10-19T00:00:00Z",
   "format": "bo1",
   "ruleset": "default",
+  "sequencePattern": "standard",
   "mapPool": [
     "area-88",
     "base-404",
     "cauchy-street",
-    "cosmite",
-    "le-brun-city",
-    "ocarnus",
     "space-lab",
-    "windy-town"
+    "windy-town",
+    "ocarnus",
+    "le-brun-city"
   ],
-  "firstActorMode": "random",
+  "firstActorMode": "coinflip",
+  "steps": [
+    {
+      "team": "a",
+      "type": "ban"
+    },
+    {
+      "team": "b",
+      "type": "ban"
+    },
+    {
+      "team": "a",
+      "type": "ban"
+    },
+    {
+      "team": "b",
+      "type": "ban"
+    },
+    {
+      "team": "a",
+      "type": "ban"
+    },
+    {
+      "team": "b",
+      "type": "ban"
+    },
+    {
+      "team": "a",
+      "type": "side",
+      "forDecider": true
+    }
+  ],
   "pickBanTimerSeconds": 50,
   "sideTimerSeconds": 35,
   "timerEnforcement": "random-after-timeout",
-  "roomImportCode": "40GE0I",
-  "notes": "Port Euler excluded from Season 3 ranked pool."
+  "notes": "Default pool; not an independently verified official ranked pool. Cosmite and Port Euler remain available for custom pools. No verified game import code supplied."
 }

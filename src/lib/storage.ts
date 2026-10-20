@@ -1,21 +1,20 @@
 import type { ConfirmedAction } from '@/lib/state-machine';
 import type { FirstActorMode } from '@/types/veto';
+import type { VetoPreset } from '@/types/preset';
+import { validatePreset } from '@/lib/preset-rules';
 
 export interface SessionRecord {
   sessionId: string;
   teamAToken: string;
   teamBToken: string;
   presetId?: string;
+  presetName?: string;
+  presetSnapshot?: VetoPreset;
   mapPool?: string[];
   format?: string;
   ruleset?: string;
   firstActorMode: FirstActorMode;
-  steps?: {
-    team: 'a' | 'b';
-    type: 'ban' | 'pick' | 'side';
-    forPickIndex?: number;
-    forDecider?: boolean;
-  }[];
+  steps?: VetoPreset['steps'];
   pickBanTimerSeconds?: number | null;
   sideTimerSeconds?: number | null;
   timerEnforcement?: 'none' | 'random-after-timeout';
@@ -32,6 +31,8 @@ export interface SessionSummary {
   teamAName: string;
   teamBName: string;
   firstActor: 'a' | 'b' | null;
+  presetSnapshot?: VetoPreset;
+  firstActorMode?: FirstActorMode;
   actions: ConfirmedAction[];
   finalResult: {
     mapId: string;
@@ -103,7 +104,13 @@ export function saveSessionConfig(
   sessionId: string,
   config: Omit<SessionRecord, 'sessionId' | 'createdAt'>
 ): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined')
+    throw new Error('Browser storage is unavailable.');
+  if (config.presetSnapshot) {
+    const result = validatePreset(config.presetSnapshot);
+    if (!result.preset) throw new Error(result.errors.join(' '));
+    config = { ...config, presetSnapshot: result.preset };
+  }
   try {
     const record: SessionRecord = {
       ...config,
@@ -116,7 +123,9 @@ export function saveSessionConfig(
     );
     saveRecentSession(record);
   } catch {
-    // ignore storage errors
+    throw new Error(
+      'Could not store the room. Allow browser storage or free some site storage, then retry. Your preset has not been discarded.'
+    );
   }
 }
 
@@ -127,7 +136,21 @@ export function getSessionConfig(sessionId: string): SessionRecord | null {
       `${SESSION_CONFIG_KEY}:${sessionId}`
     );
     if (!raw) return null;
-    return JSON.parse(raw) as SessionRecord;
+    const record: unknown = JSON.parse(raw);
+    if (!record || typeof record !== 'object') return null;
+    const value = record as SessionRecord;
+    if (
+      value.sessionId !== sessionId ||
+      typeof value.teamAToken !== 'string' ||
+      typeof value.teamBToken !== 'string'
+    )
+      return null;
+    if (value.presetSnapshot) {
+      const result = validatePreset(value.presetSnapshot);
+      if (!result.preset) return null;
+      value.presetSnapshot = result.preset;
+    }
+    return value;
   } catch {
     return null;
   }

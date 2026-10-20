@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as Y from 'yjs';
 import {
   createCollabSession,
   destroyCollabSession,
   type CollabState,
+  type ConnectionStatus,
 } from './provider';
 import {
   getRemoteAwareness,
@@ -31,17 +31,17 @@ import {
   type SessionMeta,
   type TeamIntent,
 } from './sync';
+import { restoreCheckpoint, saveCheckpoint } from './checkpoint';
 import {
   deriveVetoState,
   validateAction,
-  canStartFirstActorFlip,
   startCoinFlip,
   resolveCoinflipChoice,
   type ConfirmedAction,
   type VetoState,
   type FirstActorResult,
 } from '@/lib/state-machine';
-import type { Team, Side, MapId } from '@/types/veto';
+import type { Team, Side } from '@/types/veto';
 import {
   getRoleFromToken,
   generateSessionLinks,
@@ -56,16 +56,17 @@ import {
 } from '@/lib/sound';
 import { getUserIdentity } from '@/lib/identity';
 
-const LOCAL_ORIGIN = 'local-veto';
-
 export interface UseVetoSessionOptions {
   sessionId: string | null | undefined;
   token: string | null | undefined;
 }
-
 export interface VetoSession {
   loading: boolean;
   isConnected: boolean;
+  connectionStatus: ConnectionStatus;
+  connectionError: string | null;
+  storageWarning: string | null;
+  retryConnection: () => void;
   peerCount: number;
   role: Team | 'spectator';
   displayRole: Team | 'spectator';
@@ -95,12 +96,8 @@ export function useVetoSession({
   token,
 }: UseVetoSessionOptions): VetoSession {
   const identity = useMemo(() => getUserIdentity(), []);
-
-  const [loading, setLoading] = useState(true);
-  const [isConnected, setIsConnected] = useState(false);
-  const [peerCount, setPeerCount] = useState(0);
   const [meta, setMeta] = useState<SessionMeta | null>(null);
-  const [actions, setActions] = useState<ConfirmedAction[]>([]);
+  const [rawActions, setActions] = useState<ConfirmedAction[]>([]);
   const [teamNames, setTeamNames] = useState<Record<Team, string>>({
     a: 'Team A',
     b: 'Team B',
@@ -109,8 +106,9 @@ export function useVetoSession({
     a: false,
     b: false,
   });
-  const [firstActorResult, setFirstActorResultState] =
-    useState<FirstActorResult | null>(null);
+  const [firstActorResult, setFirstActor] = useState<FirstActorResult | null>(
+    null
+  );
   const [intents, setIntents] = useState<{
     teamA: TeamIntent[];
     teamB: TeamIntent[];
@@ -120,45 +118,29 @@ export function useVetoSession({
   >(new Map());
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
   const [localName, setLocalName] = useState(identity.name);
-
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
+    phase: 'discovering',
+    peerCount: 0,
+  });
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const sessionRef = useRef<CollabState | null>(null);
-  const mapsRef = useRef<ReturnType<typeof getVetoMaps> | null>(null);
-  const mountedRef = useRef(true);
-  const lastReadyRef = useRef<Record<Team, boolean>>({ a: false, b: false });
-
-  const role = useMemo(() => {
-    if (!meta || !token) return 'spectator';
-    return getRoleFromToken(token, meta.teamAToken, meta.teamBToken);
-  }, [meta, token]);
-
-  const displayRole = useMemo(() => role, [role]);
-
-  const isHost = useMemo(() => role === 'a', [role]);
-
+  const retryRef = useRef<(() => void) | null>(null);
+  const role = meta
+    ? getRoleFromToken(token ?? null, meta.teamAToken, meta.teamBToken)
+    : 'spectator';
   const vetoState = useMemo(
     () =>
       deriveVetoState(
         meta?.format ?? 'bo1',
         meta?.mapPool ?? [],
-        actions,
+        rawActions,
         firstActorResult?.firstActor ?? null,
         meta?.steps
       ),
-    [meta, actions, firstActorResult]
+    [meta, rawActions, firstActorResult]
   );
-
-  // Play a turn cue when it becomes the local player's turn.
-  const lastTurnActorRef = useRef<Team | null>(null);
-  useEffect(() => {
-    const currentStep = vetoState.currentStep;
-    if (role !== 'spectator' && currentStep && currentStep.team === role) {
-      if (lastTurnActorRef.current !== role) {
-        playTurnSound();
-      }
-    }
-    lastTurnActorRef.current = currentStep?.team ?? null;
-  }, [vetoState.currentStep, role]);
-
+  const actions = vetoState.acceptedActions;
   const shareLinks = useMemo(
     () =>
       meta
@@ -166,225 +148,239 @@ export function useVetoSession({
         : null,
     [meta]
   );
-
-  // Refs for latest state inside callbacks/effects. Synced in an effect rather
-  // than during render: nothing reads these during render, only inside callbacks
-  // and effects that run after commit, so this stays fresh and rule-compliant.
-  const roleRef = useRef(role);
-  const metaRef = useRef(meta);
-  const actionsRef = useRef(actions);
-  const firstActorResultRef = useRef(firstActorResult);
-  const readyStateRef = useRef(readyState);
-  const vetoStateRef = useRef(vetoState);
-  const localNameRef = useRef(localName);
-  useEffect(() => {
-    roleRef.current = role;
-    metaRef.current = meta;
-    actionsRef.current = actions;
-    firstActorResultRef.current = firstActorResult;
-    readyStateRef.current = readyState;
-    vetoStateRef.current = vetoState;
-    localNameRef.current = localName;
-  });
-
-  const updateRemoteUsers = useCallback(
-    (awareness: CollabState['awareness']) => {
-      if (!mountedRef.current) return;
-      const users = getRemoteAwareness(awareness);
-      setRemoteUsers(new Map(users));
-      setPeerCount(users.size);
-    },
-    []
-  );
-
-  const syncAllState = useCallback((doc: Y.Doc) => {
-    if (!mountedRef.current) return;
-    setMeta(getMeta(doc));
-    setActions(getActions(doc));
-    setTeamNames(getTeamNames(doc));
-    setReadyState(getReadyState(doc));
-    setFirstActorResultState(getFirstActorResult(doc));
-    setIntents({
-      teamA: getTeamIntents(doc, 'a'),
-      teamB: getTeamIntents(doc, 'b'),
-    });
-  }, []);
-
-  const refreshAwareness = useCallback(() => {
-    const session = sessionRef.current;
-    if (!session) return;
-    const currentRole = roleRef.current;
-    setLocalAwareness(session.awareness, {
-      name: localNameRef.current,
-      color: identity.color,
-      role: currentRole,
-      selectedMapId,
-    });
-  }, [identity.color, selectedMapId]);
+  const isConnected =
+    connectionStatus.phase === 'connected' && connectionStatus.peerCount > 0;
 
   useEffect(() => {
-    refreshAwareness();
-  }, [refreshAwareness]);
-
-  useEffect(() => {
-    const session = sessionRef.current;
-    const currentRole = roleRef.current;
-    if (!session || currentRole === 'spectator') return;
-    setTeamIntent(session.doc, currentRole, {
-      clientId: session.awareness.clientID,
-      team: currentRole,
-      selectedMapId,
-      color: identity.color,
-      name: localNameRef.current,
-    });
-    refreshAwareness();
-  }, [role, selectedMapId, identity.color, refreshAwareness]);
-
-  const stopSession = useCallback((options?: { immediate?: boolean }) => {
-    const session = sessionRef.current;
-    if (!session) return;
-    const clientId = session.awareness.clientID;
-    clearLocalIntents(session.doc, clientId);
-    session.awareness.setLocalState(null);
-    destroyCollabSession(session, { immediate: options?.immediate ?? true });
-    sessionRef.current = null;
-    mapsRef.current = null;
-    setIsConnected(false);
-    setPeerCount(0);
-    setRemoteUsers(new Map());
-  }, []);
-
-  // Session lifecycle. Depends only on sessionId, so map selections and awareness
-  // changes never tear down the connection. Written to be React Strict Mode safe:
-  // each run owns its own `session` + `cancelled` flag, so the dev double-mount
-  // (mount → unmount → mount) can't strand us on the loading screen.
-  useEffect(() => {
-    if (!sessionId) {
-      // No room to join — clear the loading screen. Legitimate external sync.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLoading(false);
-      return;
-    }
-    mountedRef.current = true;
-    let cancelled = false;
-
+    if (!sessionId) return;
+    let active = true;
     const session = createCollabSession(`strinobans:${sessionId}`);
-    const maps = getVetoMaps(session.doc);
     sessionRef.current = session;
-    mapsRef.current = maps;
-    setLoading(true);
-    setIsConnected(false);
-
-    const teardown = () => {
-      try {
-        clearLocalIntents(session.doc, session.awareness.clientID);
-        session.awareness.setLocalState(null);
-      } catch {
-        // best-effort
+    const maps = getVetoMaps(session.doc);
+    let recoveryWarning: string | null = null;
+    let metadataTimer: number | undefined;
+    const armMetadataDeadline = () => {
+      clearTimeout(metadataTimer);
+      if (getMeta(session.doc) || maps.meta.has('value')) return;
+      metadataTimer = window.setTimeout(() => {
+        if (active && !getMeta(session.doc))
+          setConnectionError(
+            'Waiting for room state. Keep the creator or a participant holding this room open, then retry.'
+          );
+      }, 20_000);
+    };
+    const readIntents = () => {
+      const live = session.awareness.getStates();
+      setIntents({
+        teamA: getTeamIntents(session.doc, 'a').filter((intent) =>
+          live.has(intent.clientId)
+        ),
+        teamB: getTeamIntents(session.doc, 'b').filter((intent) =>
+          live.has(intent.clientId)
+        ),
+      });
+    };
+    const readState = () => {
+      if (!active) return;
+      if (recoveryWarning) setStorageWarning(recoveryWarning);
+      const current = getMeta(session.doc);
+      if (current && current.sessionId !== sessionId) {
+        setConnectionError(
+          'This room received mismatched rules. Retry the original invitation.'
+        );
+        return;
       }
-      destroyCollabSession(session, { immediate: true });
+      setMeta(current);
+      setActions(getActions(session.doc));
+      setTeamNames(getTeamNames(session.doc));
+      setReadyState(getReadyState(session.doc));
+      setFirstActor(getFirstActorResult(session.doc));
+      readIntents();
+      if (current) {
+        clearTimeout(metadataTimer);
+        setConnectionError(null);
+      } else if (maps.meta.has('value'))
+        setConnectionError(
+          'The room rules are invalid or unsupported. Ask the creator to check the preset.'
+        );
+    };
+    const checkpoint = () => {
+      readState();
+      try {
+        saveCheckpoint(sessionId, session.doc);
+      } catch {
+        if (active)
+          setStorageWarning(
+            'Local room recovery is unavailable. Keep another participant connected before reloading.'
+          );
+      }
+    };
+    const readPresence = () => {
+      if (!active) return;
+      setRemoteUsers(new Map(getRemoteAwareness(session.awareness)));
+      readIntents();
+    };
+    const readStatus = (status: ConnectionStatus) => {
+      if (active) setConnectionStatus(status);
+    };
+    const unsubscribeStatus = session.provider.subscribeStatus(readStatus);
+    session.doc.on('update', checkpoint);
+    session.awareness.on('change', readPresence);
+    try {
+      restoreCheckpoint(sessionId, session.doc);
+    } catch {
+      recoveryWarning =
+        'A local room checkpoint could not be restored. Waiting for another participant to synchronize.';
+    }
+    if (!getMeta(session.doc)) {
+      const config = getSessionConfig(sessionId);
+      if (config) {
+        const preset = config.presetSnapshot;
+        seedMeta(session.doc, {
+          sessionId,
+          presetId: preset?.id ?? config.presetId ?? 'custom',
+          presetName: preset?.name ?? config.presetName,
+          presetSnapshot: preset,
+          mapPool: preset?.mapPool ?? config.mapPool ?? [],
+          format: (preset?.format ??
+            config.format ??
+            'bo1') as SessionMeta['format'],
+          ruleset: preset?.ruleset ?? config.ruleset ?? 'default',
+          createdAt: config.createdAt,
+          teamAToken: config.teamAToken,
+          teamBToken: config.teamBToken,
+          firstActorMode: preset?.firstActorMode ?? config.firstActorMode,
+          steps: preset?.steps ?? config.steps,
+          pickBanTimerSeconds:
+            preset?.pickBanTimerSeconds ?? config.pickBanTimerSeconds ?? null,
+          sideTimerSeconds:
+            preset?.sideTimerSeconds ?? config.sideTimerSeconds ?? null,
+          timerEnforcement:
+            preset?.timerEnforcement ?? config.timerEnforcement ?? 'none',
+          roomImportCode: preset?.roomImportCode ?? config.roomImportCode,
+        });
+      }
+    }
+    readState();
+    readPresence();
+    readStatus(session.provider.getStatus());
+    armMetadataDeadline();
+    retryRef.current = () => {
+      setConnectionError(null);
+      armMetadataDeadline();
+      session.provider.retry();
+      readState();
+    };
+    let suspendedUser: VetoAwarenessUser | undefined;
+    const persistBeforeLeave = () => {
+      const user = (
+        session.awareness.getLocalState() as { user?: VetoAwarenessUser } | null
+      )?.user;
+      if (user) suspendedUser = { ...user, selectedMapId: null };
+      session.awareness.setLocalState(null);
+      clearLocalIntents(session.doc, session.awareness.clientID);
+      setSelectedMapId(null);
+      try {
+        saveCheckpoint(sessionId, session.doc);
+      } catch {
+        /* Recovery remains best effort. */
+      }
+    };
+    const resume = () => {
+      if (suspendedUser) {
+        session.awareness.setLocalState({ user: suspendedUser });
+        suspendedUser = undefined;
+      }
+      armMetadataDeadline();
+      session.provider.retry();
+    };
+    window.addEventListener('pagehide', persistBeforeLeave);
+    window.addEventListener('pageshow', resume);
+    return () => {
+      active = false;
+      clearTimeout(metadataTimer);
+      window.removeEventListener('pagehide', persistBeforeLeave);
+      window.removeEventListener('pageshow', resume);
+      unsubscribeStatus();
+      session.doc.off('update', checkpoint);
+      session.awareness.off('change', readPresence);
+      clearLocalIntents(session.doc, session.awareness.clientID);
+      try {
+        saveCheckpoint(sessionId, session.doc);
+      } catch {
+        /* The mounted client already reports storage failures. */
+      }
       if (sessionRef.current === session) {
         sessionRef.current = null;
-        mapsRef.current = null;
+        retryRef.current = null;
       }
+      destroyCollabSession(session, { immediate: true });
     };
-
-    void (async () => {
-      try {
-        const initial = await session.provider.waitForInitialSync();
-        if (cancelled) return;
-
-        if (initial.shouldSeedLocal) {
-          const config = getSessionConfig(sessionId);
-          if (config?.teamAToken && config.teamBToken) {
-            const metaValue: SessionMeta = {
-              sessionId,
-              presetId: config.presetId ?? 'default-bo1',
-              mapPool: config.mapPool ?? [],
-              format: (config.format as SessionMeta['format']) ?? 'bo1',
-              ruleset: config.ruleset ?? 'default',
-              createdAt: new Date().toISOString(),
-              teamAToken: config.teamAToken,
-              teamBToken: config.teamBToken,
-              firstActorMode: config.firstActorMode,
-              steps: config.steps,
-              pickBanTimerSeconds: config.pickBanTimerSeconds ?? null,
-              sideTimerSeconds: config.sideTimerSeconds ?? null,
-              timerEnforcement: config.timerEnforcement ?? 'none',
-              roomImportCode: config.roomImportCode,
-            };
-            seedMeta(session.doc, metaValue);
-          }
-        }
-
-        syncAllState(session.doc);
-        updateRemoteUsers(session.awareness);
-        setLocalAwareness(session.awareness, {
-          name: localNameRef.current,
-          color: identity.color,
-          role: roleRef.current,
-          selectedMapId: null,
-        });
-        setIsConnected(true);
-
-        const metaObserver = () => setMeta(getMeta(session.doc));
-        const actionsObserver = () => setActions(getActions(session.doc));
-        const teamNamesObserver = () => setTeamNames(getTeamNames(session.doc));
-        const readyObserver = () => {
-          const next = getReadyState(session.doc);
-          setReadyState(next);
-          (['a', 'b'] as Team[]).forEach((team) => {
-            if (next[team] && !lastReadyRef.current[team]) playBeep();
-          });
-          lastReadyRef.current = next;
-        };
-        const firstActorObserver = () =>
-          setFirstActorResultState(getFirstActorResult(session.doc));
-        const intentObserver = () =>
-          setIntents({
-            teamA: getTeamIntents(session.doc, 'a'),
-            teamB: getTeamIntents(session.doc, 'b'),
-          });
-        const awarenessHandler = () => updateRemoteUsers(session.awareness);
-
-        maps.meta.observe(metaObserver);
-        maps.actions.observe(actionsObserver);
-        maps.teamNames.observe(teamNamesObserver);
-        maps.readyState.observe(readyObserver);
-        maps.firstActorResult.observe(firstActorObserver);
-        maps.teamAIntent.observe(intentObserver);
-        maps.teamBIntent.observe(intentObserver);
-        session.awareness.on('change', awarenessHandler);
-
-        if (!cancelled) setLoading(false);
-      } catch (error) {
-        console.error('[StrinoBans] Failed to start veto session', error);
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      mountedRef.current = false;
-      teardown();
-      setIsConnected(false);
-      setPeerCount(0);
-      setRemoteUsers(new Map());
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   useEffect(() => {
-    const handler = () => stopSession({ immediate: true });
-    window.addEventListener('pagehide', handler);
-    window.addEventListener('beforeunload', handler);
-    return () => {
-      window.removeEventListener('pagehide', handler);
-      window.removeEventListener('beforeunload', handler);
-    };
-  }, [stopSession]);
+    const session = sessionRef.current;
+    if (!session) return;
+    setLocalAwareness(session.awareness, {
+      name: localName,
+      color: identity.color,
+      role,
+      selectedMapId,
+    });
+    updateSelectedMap(session.awareness, selectedMapId);
+    if (role !== 'spectator')
+      setTeamIntent(session.doc, role, {
+        clientId: session.awareness.clientID,
+        team: role,
+        selectedMapId,
+        color: identity.color,
+        name: localName,
+      });
+  }, [role, localName, selectedMapId, identity.color]);
 
-  const submitConfirmedAction = useCallback(
+  const previousActor = useRef<Team | null>(null);
+  useEffect(() => {
+    if (vetoState.currentTeam === role && previousActor.current !== role)
+      playTurnSound();
+    previousActor.current = vetoState.currentTeam;
+  }, [vetoState.currentTeam, role]);
+
+  const retryConnection = useCallback(() => {
+    retryRef.current?.();
+  }, []);
+  const setTeamNameCallback = useCallback(
+    (name: string) => {
+      const session = sessionRef.current;
+      const current = session && getMeta(session.doc);
+      if (!session || !current) return;
+      const actor = getRoleFromToken(
+        token ?? null,
+        current.teamAToken,
+        current.teamBToken
+      );
+      if (actor !== 'spectator') setTeamName(session.doc, actor, name);
+    },
+    [token]
+  );
+  const setReadyCallback = useCallback(
+    (ready: boolean) => {
+      const session = sessionRef.current;
+      const current = session && getMeta(session.doc);
+      if (!session || !current || getFirstActorResult(session.doc)) return;
+      const actor = getRoleFromToken(
+        token ?? null,
+        current.teamAToken,
+        current.teamBToken
+      );
+      if (actor !== 'spectator') {
+        setReady(session.doc, actor, ready);
+        if (ready) playBeep();
+      }
+    },
+    [token]
+  );
+
+  const submitConfirmed = useCallback(
     (
       action: Omit<
         ConfirmedAction,
@@ -392,252 +388,215 @@ export function useVetoSession({
       >
     ) => {
       const session = sessionRef.current;
-      const currentMeta = metaRef.current;
-      const currentActions = actionsRef.current;
-      const currentFirstActorResult = firstActorResultRef.current;
-      const currentRole = roleRef.current;
+      const current = session && getMeta(session.doc);
+      const status = session?.provider.getStatus();
       if (
         !session ||
-        !currentMeta ||
-        currentRole === 'spectator' ||
-        !currentFirstActorResult?.firstActor
-      ) {
-        return;
-      }
-
-      const fullAction: ConfirmedAction = {
+        !current ||
+        status?.phase !== 'connected' ||
+        status.peerCount === 0
+      )
+        return false;
+      const actor = getRoleFromToken(
+        token ?? null,
+        current.teamAToken,
+        current.teamBToken
+      );
+      const ready = getReadyState(session.doc);
+      const initiative = getFirstActorResult(session.doc);
+      if (
+        !ready.a ||
+        !ready.b ||
+        !initiative?.firstActor ||
+        initiative.choicePending
+      )
+        return false;
+      const full: ConfirmedAction = {
         ...action,
         id: crypto.randomUUID(),
         confirmedAt: new Date().toISOString(),
         confirmedByClientId: session.awareness.clientID,
       };
-
       const validation = validateAction(
-        fullAction,
-        currentMeta.format,
-        currentMeta.mapPool,
-        currentActions,
-        currentRole,
-        currentFirstActorResult?.firstActor ?? null,
-        currentMeta.steps
+        full,
+        current.format,
+        current.mapPool,
+        getActions(session.doc),
+        actor,
+        initiative.firstActor,
+        current.steps
       );
-      if (!validation.valid) {
-        console.warn('[StrinoBans] Invalid action', validation.reason);
-        return;
-      }
-
-      session.doc.transact(() => {
-        addAction(session.doc, fullAction);
-      }, LOCAL_ORIGIN);
+      if (!validation.valid) return false;
+      return addAction(session.doc, full);
     },
-    []
+    [token]
   );
-
   const submitMapAction = useCallback(
     (mapId: string) => {
-      const step = vetoStateRef.current.currentStep;
+      const step = vetoState.currentStep;
       if (!step || (step.type !== 'ban' && step.type !== 'pick')) return;
-      submitConfirmedAction({
-        stepIndex: vetoStateRef.current.currentStepIndex,
-        team: step.team,
-        type: step.type,
-        mapId,
-      });
-      playActionSound(step.type);
-      setSelectedMapId(null);
+      if (
+        submitConfirmed({
+          stepIndex: vetoState.currentStepIndex,
+          team: step.team,
+          type: step.type,
+          mapId,
+        })
+      ) {
+        playActionSound(step.type);
+        setSelectedMapId(null);
+      }
     },
-    [submitConfirmedAction]
+    [submitConfirmed, vetoState]
   );
-
   const submitSide = useCallback(
     (side: Side) => {
-      const step = vetoStateRef.current.currentStep;
+      const step = vetoState.currentStep;
       if (!step || step.type !== 'side') return;
-      const mapId = step.forDecider
-        ? (vetoStateRef.current.deciderMap ?? undefined)
-        : undefined;
-      submitConfirmedAction({
-        stepIndex: vetoStateRef.current.currentStepIndex,
-        team: step.team,
-        type: 'side',
-        side,
-        mapId,
-      });
-      playActionSound('side');
+      if (
+        submitConfirmed({
+          stepIndex: vetoState.currentStepIndex,
+          team: step.team,
+          type: 'side',
+          side,
+          ...(step.forDecider
+            ? { mapId: vetoState.deciderMap ?? undefined }
+            : {}),
+        })
+      )
+        playActionSound('side');
     },
-    [submitConfirmedAction]
+    [submitConfirmed, vetoState]
   );
 
-  const selectMap = useCallback((mapId: string | null) => {
-    setSelectedMapId(mapId);
-  }, []);
-
-  useEffect(() => {
-    const session = sessionRef.current;
-    const maps = mapsRef.current;
-    if (!session || !maps) return;
-    updateSelectedMap(session.awareness, selectedMapId);
-    const currentRole = roleRef.current;
-    if (currentRole === 'a' || currentRole === 'b') {
-      setTeamIntent(session.doc, currentRole, {
-        clientId: session.awareness.clientID,
-        team: currentRole,
-        selectedMapId,
-        color: identity.color,
-        name: localNameRef.current,
-      });
-    }
-  }, [selectedMapId, identity.color]);
-
-  const setTeamNameCallback = useCallback((name: string) => {
-    const session = sessionRef.current;
-    const currentRole = roleRef.current;
-    if (!session || currentRole === 'spectator') return;
-    setTeamName(session.doc, currentRole, name);
-  }, []);
-
-  const setReadyCallback = useCallback((ready: boolean) => {
-    const session = sessionRef.current;
-    const currentRole = roleRef.current;
-    if (!session || currentRole === 'spectator') return;
-    if (ready) playBeep();
-    setReady(session.doc, currentRole, ready);
-  }, []);
-
-  const flipCoin = useCallback(() => {
-    const session = sessionRef.current;
-    if (!session) return;
-
-    const mode = metaRef.current?.firstActorMode;
-    const existing = getFirstActorResult(session.doc);
-    if (
-      !canStartFirstActorFlip(
-        mode,
-        roleRef.current,
-        readyStateRef.current,
-        existing
+  const chooseFirstActor = useCallback(
+    (firstActor: Team) => {
+      if (firstActor !== 'a' && firstActor !== 'b') return;
+      const session = sessionRef.current;
+      const current = session && getMeta(session.doc);
+      const status = session?.provider.getStatus();
+      if (
+        !session ||
+        !current ||
+        status?.phase !== 'connected' ||
+        status.peerCount === 0
       )
-    ) {
-      return;
-    }
-
-    const flipWinner: Team = Math.random() < 0.5 ? 'a' : 'b';
-    const result = startCoinFlip(
-      mode,
-      flipWinner,
-      crypto.randomUUID(),
-      new Date().toISOString()
-    );
-    setFirstActorResult(session.doc, result);
-    playCoinFlipSound();
-  }, []);
-
-  const chooseFirstActor = useCallback((firstActor: Team) => {
-    const session = sessionRef.current;
-    const chooser = roleRef.current;
-    if (!session || chooser === 'spectator') return;
-    const existing = getFirstActorResult(session.doc);
-    if (
-      !existing ||
-      existing.mode !== 'coinflip' ||
-      !existing.choicePending ||
-      existing.flipWinner !== chooser
-    ) {
-      return;
-    }
-    setFirstActorResult(
-      session.doc,
-      resolveCoinflipChoice(
+        return;
+      const ready = getReadyState(session.doc);
+      const existing = getFirstActorResult(session.doc);
+      const chooser = getRoleFromToken(
+        token ?? null,
+        current.teamAToken,
+        current.teamBToken
+      );
+      if (
+        !ready.a ||
+        !ready.b ||
+        chooser === 'spectator' ||
+        !existing ||
+        existing.firstActor
+      )
+        return;
+      const next = resolveCoinflipChoice(
         existing,
         chooser,
         firstActor,
         new Date().toISOString()
-      )
-    );
-  }, []);
+      );
+      if (next !== existing) setFirstActorResult(session.doc, next);
+    },
+    [token]
+  );
 
-  // Team A finalizes the first actor after both teams are ready.
   useEffect(() => {
+    const session = sessionRef.current;
     if (
+      !session ||
       !meta ||
-      firstActorResult ||
+      role !== 'a' ||
       !readyState.a ||
       !readyState.b ||
-      role !== 'a'
-    ) {
+      firstActorResult ||
+      !isConnected
+    )
       return;
-    }
-    if (meta.firstActorMode === 'team-a') {
-      const session = sessionRef.current;
-      if (!session) return;
-      setFirstActorResult(session.doc, {
-        firstActor: 'a',
-        mode: 'team-a',
-        resolvedAt: new Date().toISOString(),
-      });
-      return;
-    }
-    const delay = 1000 + Math.floor(Math.random() * 1000);
-    const timer = setTimeout(() => flipCoin(), delay);
+    const begin = () => {
+      if (getFirstActorResult(session.doc)) return;
+      const ready = getReadyState(session.doc);
+      const status = session.provider.getStatus();
+      if (
+        !ready.a ||
+        !ready.b ||
+        status.phase !== 'connected' ||
+        status.peerCount === 0
+      )
+        return;
+      const now = new Date().toISOString();
+      if (meta.firstActorMode === 'team-a')
+        setFirstActorResult(session.doc, {
+          mode: 'team-a',
+          firstActor: 'a',
+          resolvedAt: now,
+        });
+      else if (
+        meta.firstActorMode === 'team-a-choice' ||
+        meta.firstActorMode === 'upper-bracket-choice'
+      ) {
+        setFirstActorResult(session.doc, {
+          mode: meta.firstActorMode,
+          choicePending: true,
+          chooserTeam: 'a',
+        });
+      } else {
+        setFirstActorResult(
+          session.doc,
+          startCoinFlip(
+            meta.firstActorMode,
+            Math.random() < 0.5 ? 'a' : 'b',
+            crypto.randomUUID(),
+            now
+          )
+        );
+        playCoinFlipSound();
+      }
+    };
+    const timer = setTimeout(
+      begin,
+      meta.firstActorMode === 'coinflip' || meta.firstActorMode === 'random'
+        ? 1000
+        : 0
+    );
     return () => clearTimeout(timer);
-  }, [readyState, meta, firstActorResult, role, flipCoin]);
+  }, [meta, role, readyState, firstActorResult, isConnected]);
 
-  // Timer enforcement lives in the <Timer> component (the visible countdown is the
-  // single source of truth). It only fires on the acting team's client, so no
-  // host-authoritative duplicate is needed here — and keeping it out of this hook
-  // avoids the countdown being reset by awareness/state churn.
-
-  return useMemo(
-    () => ({
-      loading,
-      isConnected,
-      peerCount,
-      role,
-      displayRole,
-      isHost,
-      teamNames,
-      readyState,
-      actions,
-      vetoState,
-      firstActorResult,
-      meta,
-      shareLinks,
-      selectedMapId,
-      intents,
-      remoteUsers,
-      localName,
-      setLocalName,
-      setTeamName: setTeamNameCallback,
-      setReady: setReadyCallback,
-      selectMap,
-      submitMapAction,
-      submitSide,
-      chooseFirstActor,
-    }),
-    [
-      loading,
-      isConnected,
-      peerCount,
-      role,
-      displayRole,
-      isHost,
-      teamNames,
-      readyState,
-      actions,
-      vetoState,
-      firstActorResult,
-      meta,
-      shareLinks,
-      selectedMapId,
-      intents,
-      remoteUsers,
-      localName,
-      setTeamNameCallback,
-      setReadyCallback,
-      selectMap,
-      submitMapAction,
-      submitSide,
-      chooseFirstActor,
-    ]
-  );
+  return {
+    loading: !meta,
+    isConnected,
+    connectionStatus,
+    connectionError,
+    storageWarning,
+    retryConnection,
+    peerCount: connectionStatus.peerCount,
+    role,
+    displayRole: role,
+    isHost: role === 'a',
+    teamNames,
+    readyState,
+    actions,
+    vetoState,
+    firstActorResult,
+    meta,
+    shareLinks,
+    selectedMapId,
+    intents,
+    remoteUsers,
+    localName,
+    setLocalName,
+    setTeamName: setTeamNameCallback,
+    setReady: setReadyCallback,
+    selectMap: setSelectedMapId,
+    submitMapAction,
+    submitSide,
+    chooseFirstActor,
+  };
 }

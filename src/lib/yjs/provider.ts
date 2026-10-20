@@ -1,11 +1,23 @@
-"use client";
+'use client';
 
-import type { Awareness } from "y-protocols/awareness";
-import * as Y from "yjs";
-import { createTrysteroTransportProvider } from "./trystero-provider";
-import { createWebrtcTransportProvider } from "./webrtc-provider";
+import type { Awareness } from 'y-protocols/awareness';
+import * as Y from 'yjs';
+import { createTrysteroTransportProvider } from './trystero-provider';
+import { createWebrtcTransportProvider } from './webrtc-provider';
 
-export type CollabTransport = "trystero" | "webrtc";
+export type CollabTransport = 'trystero' | 'webrtc';
+
+export interface ConnectionStatus {
+  phase:
+    | 'discovering'
+    | 'connecting'
+    | 'syncing'
+    | 'connected'
+    | 'disconnected'
+    | 'error';
+  peerCount: number;
+  message?: string;
+}
 
 export interface CollabInitialSyncState {
   shouldSeedLocal: boolean;
@@ -16,6 +28,9 @@ export interface CollabInitialSyncState {
 export interface CollabProvider {
   readonly transport: CollabTransport;
   readonly awareness: Awareness;
+  getStatus(): ConnectionStatus;
+  subscribeStatus(listener: (status: ConnectionStatus) => void): () => void;
+  retry(): void;
   destroy(): void;
   waitForInitialSync(): Promise<CollabInitialSyncState>;
 }
@@ -28,29 +43,35 @@ export interface CollabState {
 }
 
 function getConfiguredTransport(): CollabTransport {
-  // Runtime overrides (handy for local testing / debugging): a `strinobans_transport`
-  // localStorage key or a `?transport=` query param take precedence over the build
-  // env. The webrtc transport syncs same-origin tabs over BroadcastChannel with no
-  // network, which is what the headed Playwright flow relies on.
-  if (typeof window !== "undefined") {
-    try {
-      const stored = window.localStorage.getItem("strinobans_transport");
-      if (stored === "webrtc" || stored === "trystero") return stored;
-    } catch {
-      // ignore storage access errors
+  // Production never inherits an old per-device route. Debugging must be explicit.
+  const configured =
+    process.env.NEXT_PUBLIC_COLLAB_TRANSPORT?.trim().toLowerCase();
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    const debug =
+      params.get('p2pdebug') === '1' || process.env.NODE_ENV === 'development';
+    if (debug) {
+      const param = params.get('transport');
+      if (param === 'webrtc' || param === 'trystero') return param;
+      if (process.env.NODE_ENV === 'development') {
+        try {
+          if (window.localStorage.getItem('strinobans_transport') === 'webrtc')
+            return 'webrtc';
+        } catch {
+          // Storage is optional for the offline test adapter.
+        }
+      }
+      if (configured === 'webrtc') return 'webrtc';
     }
-    const param = new URLSearchParams(window.location.search).get("transport");
-    if (param === "webrtc" || param === "trystero") return param;
   }
-  const configured = process.env.NEXT_PUBLIC_COLLAB_TRANSPORT?.trim().toLowerCase();
-  return configured === "webrtc" ? "webrtc" : "trystero";
+  return 'trystero';
 }
 
 export function createCollabSession(roomName: string): CollabState {
   const doc = new Y.Doc();
   const transport = getConfiguredTransport();
   const provider =
-    transport === "trystero"
+    transport === 'trystero'
       ? createTrysteroTransportProvider(roomName, doc)
       : createWebrtcTransportProvider(roomName, doc);
 
@@ -62,7 +83,10 @@ export function createCollabSession(roomName: string): CollabState {
   };
 }
 
-export function destroyCollabSession(state: CollabState, options?: { immediate?: boolean }): void {
+export function destroyCollabSession(
+  state: CollabState,
+  options?: { immediate?: boolean }
+): void {
   try {
     state.provider.destroy();
   } catch {

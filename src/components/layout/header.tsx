@@ -23,7 +23,12 @@ export function Header({ onOpenHistory, leftSlot }: HeaderProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("strinobans-theme") as "dark" | "light" | null;
+    let stored: "dark" | "light" | null = null;
+    try {
+      stored = localStorage.getItem("strinobans-theme") as "dark" | "light" | null;
+    } catch {
+      // Theme works without browser storage.
+    }
     const current = stored ?? "dark";
     // Hydration-safe read of the persisted theme from an external store.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -48,7 +53,11 @@ export function Header({ onOpenHistory, leftSlot }: HeaderProps) {
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
     document.documentElement.className = next;
-    localStorage.setItem("strinobans-theme", next);
+    try {
+      localStorage.setItem("strinobans-theme", next);
+    } catch {
+      // Keep the in-memory theme.
+    }
   };
 
   const updateIdentity = (patch: Partial<UserIdentity>) => {
@@ -63,7 +72,7 @@ export function Header({ onOpenHistory, leftSlot }: HeaderProps) {
 
   return (
     <header
-      className="flex h-15 items-center justify-between border-b border-border px-6 py-3"
+      className="flex min-h-15 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-6"
       role="banner"
     >
       <div className="flex items-center gap-3">
@@ -82,7 +91,7 @@ export function Header({ onOpenHistory, leftSlot }: HeaderProps) {
         )}
       </div>
 
-      <nav className="flex items-center gap-6" aria-label="Main">
+      <nav className="flex items-center gap-3 sm:gap-6" aria-label="Main">
         <a
           href="https://sunguraa.github.io/StrinoPlant/"
           target="_blank"
@@ -132,7 +141,7 @@ export function Header({ onOpenHistory, leftSlot }: HeaderProps) {
                 aria-hidden="true"
               />
             )}
-            <span className="max-w-[120px] truncate">{identity?.name ?? "You"}</span>
+            <span className="max-w-[80px] truncate sm:max-w-[120px]">{identity?.name ?? "You"}</span>
           </button>
           {identityOpen && (
             <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-border bg-card p-3 shadow-lg">

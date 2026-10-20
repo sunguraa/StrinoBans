@@ -6,6 +6,11 @@ export type Side = 'attacker' | 'defender';
 
 export type Format = 'bo1' | 'bo3' | 'bo5' | 'bo7' | 'custom';
 
-export type FirstActorMode = 'random' | 'coinflip' | 'team-a';
+export type FirstActorMode =
+  | 'random'
+  | 'coinflip'
+  | 'team-a'
+  | 'team-a-choice'
+  | 'upper-bracket-choice';
 
 export type ActionType = 'ban' | 'pick' | 'side';

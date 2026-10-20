@@ -1,41 +1,43 @@
 {
-  "version": 2,
+  "version": 3,
   "groups": [
     {
       "id": "default",
       "name": "Default",
       "author": "StrinoBans Team",
-      "description": "Bo1, Bo3, Bo5, and Bo7 use the eight-map Season 3 pool. A coin flip decides who starts.",
-      "updatedAt": "2026-06-17T00:00:00Z",
+      "description": "Choose BO1, BO3, BO5, or BO7.",
+      "updatedAt": "2026-10-19T00:00:00Z",
       "stages": [
-        { "format": "bo1", "presetId": "default-bo1" },
-        { "format": "bo3", "presetId": "default-bo3" },
-        { "format": "bo5", "presetId": "default-bo5" },
-        { "format": "bo7", "presetId": "default-bo7" }
+        {
+          "format": "bo1",
+          "presetId": "default-bo1"
+        },
+        {
+          "format": "bo3",
+          "presetId": "default-bo3"
+        },
+        {
+          "format": "bo5",
+          "presetId": "default-bo5"
+        },
+        {
+          "format": "bo7",
+          "presetId": "default-bo7"
+        }
       ]
     },
     {
-      "id": "krihcity-nostalgia-cup",
-      "name": "Krihcity Nostalgia Cup",
-      "author": "krihcity",
-      "description": "Bo1 and Bo3 use a seven-map pool. The coin-flip winner chooses who starts. Lebrun City and Ocarnus are not in the pool.",
-      "updatedAt": "2026-07-27T00:00:00Z",
+      "id": "grand-final",
+      "name": "Grand final",
+      "author": "StrinoBans Team",
+      "description": "BO5 only. The upper-bracket finalist (Team A) gets both bans as its reward for coming from the winners bracket.",
+      "updatedAt": "2026-10-19T00:00:00Z",
       "stages": [
-        { "format": "bo1", "presetId": "krihcity-nostalgia-cup-bo1" },
-        { "format": "bo3", "presetId": "krihcity-nostalgia-cup-bo3" }
+        {
+          "format": "bo5",
+          "presetId": "grand-final-bo5"
+        }
       ]
-    },
-    {                                                                                                                                                           
-     "id": "super-stringify-brawl",
-     "name": "Super Stringify Brawl",
-     "author": "areeb",
-     "description": "Bo1, Bo3, and Bo5 use a seven-map pool. The lower-seeded team starts.",
-     "updatedAt": "2026-07-24T00:00:00Z",
-     "stages": [
-       { "format": "bo1", "presetId": "ssb-bo1" },
-       { "format": "bo3", "presetId": "ssb-bo3" },
-       { "format": "bo5", "presetId": "ssb-bo5" }
-       ]
-     }
+    }
   ]
 }

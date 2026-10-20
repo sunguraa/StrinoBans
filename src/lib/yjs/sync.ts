@@ -1,10 +1,13 @@
 import * as Y from 'yjs';
 import type { FirstActorMode, Format, Team } from '@/types/veto';
 import type { ConfirmedAction, FirstActorResult } from '@/lib/state-machine';
-
+import type { VetoPreset } from '@/types/preset';
+import { validatePreset } from '@/lib/preset-rules';
 export interface SessionMeta {
   sessionId: string;
   presetId: string;
+  presetName?: string;
+  presetSnapshot?: VetoPreset;
   mapPool: string[];
   format: Format;
   ruleset: string;
@@ -12,12 +15,7 @@ export interface SessionMeta {
   teamAToken: string;
   teamBToken: string;
   firstActorMode: FirstActorMode;
-  steps?: {
-    team: 'a' | 'b';
-    type: 'ban' | 'pick' | 'side';
-    forPickIndex?: number;
-    forDecider?: boolean;
-  }[];
+  steps?: VetoPreset['steps'];
   pickBanTimerSeconds?: number | null;
   sideTimerSeconds?: number | null;
   timerEnforcement?: 'none' | 'random-after-timeout';
@@ -67,29 +65,99 @@ export function getVetoMaps(doc: Y.Doc): VetoYjsMaps {
 
 export function seedMeta(doc: Y.Doc, meta: SessionMeta): void {
   const maps = getVetoMaps(doc);
+  if (maps.meta.has('value')) return;
   doc.transact(() => {
-    maps.meta.set('value', JSON.stringify(meta));
+    if (!maps.meta.has('value')) maps.meta.set('value', JSON.stringify(meta));
   }, LOCAL_ORIGIN);
 }
 
 export function getMeta(doc: Y.Doc): SessionMeta | null {
-  const maps = getVetoMaps(doc);
-  return parseJson<SessionMeta>(maps.meta.get('value'));
+  const raw = getVetoMaps(doc).meta.get('value');
+  if (!raw || raw.length > 262144) return null;
+  const value = parseJson<SessionMeta>(raw);
+  if (
+    !value ||
+    typeof value.sessionId !== 'string' ||
+    !value.sessionId ||
+    typeof value.teamAToken !== 'string' ||
+    !value.teamAToken ||
+    typeof value.teamBToken !== 'string' ||
+    !value.teamBToken ||
+    value.teamAToken === value.teamBToken
+  )
+    return null;
+  const result = validatePreset(
+    value.presetSnapshot ?? {
+      id: value.presetId,
+      name: value.presetName ?? value.presetId,
+      author: 'Room creator',
+      description: '',
+      updatedAt: value.createdAt,
+      format: value.format,
+      ruleset: value.ruleset,
+      mapPool: value.mapPool,
+      firstActorMode: value.firstActorMode,
+      steps: value.steps,
+      pickBanTimerSeconds: value.pickBanTimerSeconds,
+      sideTimerSeconds: value.sideTimerSeconds,
+      timerEnforcement: value.timerEnforcement,
+      roomImportCode: value.roomImportCode,
+    }
+  );
+  if (!result.preset) return null;
+  const preset = result.preset;
+  return {
+    ...value,
+    presetId: preset.id,
+    presetName: preset.name,
+    mapPool: preset.mapPool,
+    format: preset.format as Format,
+    ruleset: preset.ruleset,
+    firstActorMode: preset.firstActorMode,
+    steps: preset.steps,
+    pickBanTimerSeconds: preset.pickBanTimerSeconds,
+    sideTimerSeconds: preset.sideTimerSeconds,
+    timerEnforcement: preset.timerEnforcement,
+    roomImportCode: preset.roomImportCode,
+    ...(value.presetSnapshot ? { presetSnapshot: preset } : {}),
+  };
 }
 
-export function addAction(doc: Y.Doc, action: ConfirmedAction): void {
+export function addAction(doc: Y.Doc, action: ConfirmedAction): boolean {
   const maps = getVetoMaps(doc);
+  if (getActions(doc).some((existing) => existing.id === action.id))
+    return false;
   doc.transact(() => {
     maps.actions.push([JSON.stringify(action)]);
   }, LOCAL_ORIGIN);
+  return true;
 }
 
 export function getActions(doc: Y.Doc): ConfirmedAction[] {
   const maps = getVetoMaps(doc);
   const actions: ConfirmedAction[] = [];
+  const ids = new Set<string>();
   maps.actions.forEach((value) => {
+    if (value.length > 4096 || actions.length >= 128) return;
     const parsed = parseJson<ConfirmedAction>(value);
-    if (parsed) actions.push(parsed);
+    if (
+      !parsed ||
+      typeof parsed.id !== 'string' ||
+      ids.has(parsed.id) ||
+      !Number.isInteger(parsed.stepIndex) ||
+      parsed.stepIndex < 0 ||
+      (parsed.team !== 'a' && parsed.team !== 'b') ||
+      !['ban', 'pick', 'side'].includes(parsed.type) ||
+      typeof parsed.confirmedAt !== 'string' ||
+      !Number.isFinite(parsed.confirmedByClientId) ||
+      (parsed.mapId !== undefined && typeof parsed.mapId !== 'string') ||
+      (parsed.side !== undefined &&
+        parsed.side !== 'attacker' &&
+        parsed.side !== 'defender')
+    )
+      return;
+    ids.add(parsed.id);
+    actions.push(parsed);
   });
   return actions;
 }
@@ -135,8 +203,41 @@ export function setFirstActorResult(
 }
 
 export function getFirstActorResult(doc: Y.Doc): FirstActorResult | null {
-  const maps = getVetoMaps(doc);
-  return parseJson<FirstActorResult>(maps.firstActorResult.get('value'));
+  const value = parseJson<FirstActorResult>(
+    getVetoMaps(doc).firstActorResult.get('value')
+  );
+  if (
+    !value ||
+    ![
+      'random',
+      'coinflip',
+      'team-a',
+      'team-a-choice',
+      'upper-bracket-choice',
+    ].includes(value.mode)
+  )
+    return null;
+  if (
+    value.firstActor !== undefined &&
+    value.firstActor !== 'a' &&
+    value.firstActor !== 'b'
+  )
+    return null;
+  if (
+    value.flipWinner !== undefined &&
+    value.flipWinner !== 'a' &&
+    value.flipWinner !== 'b'
+  )
+    return null;
+  if (
+    value.chooserTeam !== undefined &&
+    value.chooserTeam !== 'a' &&
+    value.chooserTeam !== 'b'
+  )
+    return null;
+  if (value.choicePending && !value.chooserTeam && !value.flipWinner)
+    return null;
+  return value;
 }
 
 export function setTeamIntent(

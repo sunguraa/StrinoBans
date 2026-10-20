@@ -10,7 +10,7 @@ const LINKS = [
 export function Branding() {
   return (
     <div
-      className="fixed bottom-3 right-3 z-40 flex items-center gap-2 rounded-md border border-border bg-card/90 px-3 py-1.5 text-xs backdrop-blur"
+      className="fixed bottom-3 right-3 z-40 flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center justify-end gap-2 rounded-md border border-border bg-card/90 px-3 py-1.5 text-xs backdrop-blur sm:flex-nowrap"
       role="contentinfo"
       aria-label="Credits"
     >

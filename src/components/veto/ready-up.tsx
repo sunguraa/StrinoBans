@@ -1,11 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { TeamPanel } from './team-panel';
 import type { Team } from '@/types/veto';
 import type { SessionLinks } from '@/lib/token';
-import { useState } from 'react';
+import { RoomLinkRow } from './room-link-row';
 
 interface ReadyUpProps {
   role: Team | 'spectator';
@@ -15,32 +14,6 @@ interface ReadyUpProps {
   onReadyToggle: (team: Team) => void;
   isHost: boolean;
   links: SessionLinks | null;
-}
-
-function LinkRow({ label, url }: { label: string; url: string }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore
-    }
-  };
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
-      <span className="font-semibold text-muted-foreground">{label}</span>
-      <Button
-        type="button"
-        size="sm"
-        onClick={handleCopy}
-        aria-label={`Copy ${label} link`}
-      >
-        {copied ? 'Copied' : 'Copy Link'}
-      </Button>
-    </div>
-  );
 }
 
 export function ReadyUp({
@@ -57,10 +30,6 @@ export function ReadyUp({
   const showTeamA = isHost || role === 'a';
   const showTeamB = isHost || role === 'b';
   const showSpectator = true;
-
-  // Let's hide the Ready buttons if the name is completely empty
-  const nameAEmpty = !teamNames.a.trim();
-  const nameBEmpty = !teamNames.b.trim();
 
   return (
     <div className="w-full max-w-xl space-y-5">
@@ -121,11 +90,16 @@ export function ReadyUp({
               ? 'Distribute these links to each team and spectator. Do not share team links with the opposing team.'
               : 'Share these links with teammates or spectating helpers.'}
           </p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Keep this room open while the other captain joins. Discovery and
+            recovery happen automatically. A room link is an invitation, not a
+            permanent hosted backup.
+          </p>
           <div className="space-y-2">
-            {showTeamA && <LinkRow label="Team A Link" url={links.teamA} />}
-            {showTeamB && <LinkRow label="Team B Link" url={links.teamB} />}
+            {showTeamA && <RoomLinkRow label="Team A" url={links.teamA} />}
+            {showTeamB && <RoomLinkRow label="Team B" url={links.teamB} />}
             {showSpectator && (
-              <LinkRow label="Spectator Link" url={links.spectator} />
+              <RoomLinkRow label="Spectator" url={links.spectator} />
             )}
           </div>
         </Card>

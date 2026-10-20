@@ -35,7 +35,7 @@ export function MapSelector({ selected, onChange }: MapSelectorProps) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm text-muted-foreground">
           {selected.length} of {MAP_POOL.length} maps selected.
         </span>
@@ -49,8 +49,7 @@ export function MapSelector({ selected, onChange }: MapSelectorProps) {
           {allSelected ? 'Deselect all' : 'Select all'}
         </Button>
       </div>
-      {/* flex-wrap + justify-center centers an incomplete final row; widths size each card */}
-      <div className="flex flex-wrap justify-center gap-3">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,8rem),1fr))] gap-3 sm:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]">
         {MAP_POOL.map((map) => {
           const isSelected = selected.includes(map.id);
           return (
@@ -61,21 +60,41 @@ export function MapSelector({ selected, onChange }: MapSelectorProps) {
               onClick={() => toggle(map.id)}
               aria-pressed={isSelected}
               aria-label={
-                isSelected ? `${map.name} selected` : `${map.name} not selected`
+                isSelected ? `${map.name}, included` : `${map.name}, excluded`
               }
               className={cn(
-                'flex h-auto w-[calc(50%-0.375rem)] flex-col items-center gap-2 rounded-md border p-2 transition-colors sm:w-[calc(33.333%-0.5rem)] md:w-[calc(20%-0.6rem)]',
+                'flex h-auto min-h-11 min-w-0 flex-col items-stretch gap-2 whitespace-normal rounded-md border p-2 text-left motion-reduce:transition-none',
                 isSelected
                   ? 'border-primary bg-primary/10'
                   : 'border-border hover:bg-accent'
               )}
             >
-              <img
-                src={getCachedIntroPath(map.id)}
-                alt=""
-                className="h-24 w-full rounded-sm object-cover"
-              />
-              <span className="text-sm font-medium">{map.name}</span>
+              <span className="relative block aspect-video w-full overflow-hidden rounded-sm bg-muted">
+                <span className="absolute inset-0 flex items-center justify-center p-2 text-center text-xs text-muted-foreground">
+                  Map image unavailable
+                </span>
+                <img
+                  src={getCachedIntroPath(map.id)}
+                  alt=""
+                  loading="lazy"
+                  className="relative h-full w-full object-cover"
+                  onError={(event) => {
+                    event.currentTarget.style.visibility = 'hidden';
+                  }}
+                />
+              </span>
+              <span className="break-words text-sm font-medium">
+                {map.name}
+              </span>
+              <span
+                className={cn(
+                  'text-xs',
+                  isSelected ? 'text-foreground' : 'text-muted-foreground'
+                )}
+              >
+                {isSelected ? 'Included' : 'Excluded'}
+                {!map.inDefaultPool ? ' · Custom pool' : ''}
+              </span>
             </Button>
           );
         })}

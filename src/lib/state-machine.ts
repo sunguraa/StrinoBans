@@ -14,6 +14,7 @@ export interface VetoStep {
   type: StepType;
   forPickIndex?: number;
   forDecider?: boolean;
+  actor?: 'upper-bracket';
 }
 
 export interface ConfirmedAction {
@@ -44,6 +45,7 @@ export interface VetoState {
   remainingMaps: MapId[];
   deciderMap: MapId | null;
   isComplete: boolean;
+  acceptedActions: ConfirmedAction[];
   pendingPick: { mapId: MapId; pickedBy: Team; pickStepIndex: number } | null;
 }
 
@@ -55,6 +57,7 @@ export interface FirstActorResult {
   resolvedAt?: string;
   flipWinner?: Team;
   choicePending?: boolean;
+  chooserTeam?: Team;
 }
 
 export function canStartFirstActorFlip(
@@ -62,7 +65,7 @@ export function canStartFirstActorFlip(
   role: Team | 'spectator',
   readyState: Record<Team, boolean>,
   existingResult: FirstActorResult | null
-): mode is Exclude<FirstActorMode, 'team-a'> {
+): mode is 'random' | 'coinflip' {
   return (
     (mode === 'random' || mode === 'coinflip') &&
     role === 'a' &&
@@ -73,14 +76,14 @@ export function canStartFirstActorFlip(
 }
 
 export function startCoinFlip(
-  mode: Exclude<FirstActorMode, 'team-a'>,
+  mode: 'random' | 'coinflip',
   flipWinner: Team,
   flipSeed: string,
   flippedAt: string
 ): FirstActorResult {
   const flip = { mode, flipWinner, flipSeed, flippedAt };
   return mode === 'coinflip'
-    ? { ...flip, choicePending: true }
+    ? { ...flip, chooserTeam: flipWinner, choicePending: true }
     : { ...flip, firstActor: flipWinner, resolvedAt: flippedAt };
 }
 
@@ -91,9 +94,13 @@ export function resolveCoinflipChoice(
   resolvedAt: string
 ): FirstActorResult {
   if (
-    result.mode !== 'coinflip' ||
+    !['coinflip', 'team-a-choice', 'upper-bracket-choice'].includes(
+      result.mode
+    ) ||
     !result.choicePending ||
-    result.flipWinner !== chooser
+    (result.mode === 'coinflip' ? result.flipWinner : 'a') !== chooser ||
+    (firstActor !== 'a' && firstActor !== 'b') ||
+    (chooser !== 'a' && chooser !== 'b')
   ) {
     return result;
   }
@@ -188,10 +195,52 @@ export function getFormatSteps(
     customSteps && customSteps.length > 0
       ? customSteps
       : generateSteps(bestOfForFormat(format), mapCount ?? 8);
-  if (firstActor === 'b') {
-    return swapStepTeams(steps);
+  const resolved = firstActor === 'b' ? swapStepTeams(steps) : steps;
+  return resolved.map((step) =>
+    step.actor === 'upper-bracket' ? { ...step, team: 'a' as const } : step
+  );
+}
+
+function actionMatches(
+  action: ConfirmedAction,
+  step: VetoStep | undefined,
+  state: VetoState
+): boolean {
+  if (
+    !action ||
+    !step ||
+    typeof action.id !== 'string' ||
+    action.id.length === 0 ||
+    typeof action.confirmedAt !== 'string' ||
+    !Number.isFinite(Date.parse(action.confirmedAt)) ||
+    !Number.isSafeInteger(action.confirmedByClientId) ||
+    !Number.isSafeInteger(action.stepIndex) ||
+    action.stepIndex !== state.currentStepIndex ||
+    action.team !== step.team ||
+    action.type !== step.type
+  )
+    return false;
+  if (action.type === 'ban' || action.type === 'pick') {
+    return (
+      action.side === undefined &&
+      typeof action.mapId === 'string' &&
+      state.remainingMaps.includes(action.mapId)
+    );
   }
-  return steps;
+  if (action.side !== 'attacker' && action.side !== 'defender') return false;
+  if (step.forDecider) {
+    return (
+      !state.pendingPick &&
+      state.remainingMaps.length === 1 &&
+      (action.mapId === undefined || action.mapId === state.remainingMaps[0])
+    );
+  }
+  return (
+    !!state.pendingPick &&
+    state.pendingPick.pickStepIndex === action.stepIndex - 1 &&
+    step.forPickIndex === state.pickedMaps.length &&
+    (action.mapId === undefined || action.mapId === state.pendingPick.mapId)
+  );
 }
 
 export function deriveVetoState(
@@ -201,102 +250,86 @@ export function deriveVetoState(
   firstActor?: Team | null,
   customSteps?: VetoStep[]
 ): VetoState {
-  const actorResolved = firstActor !== undefined && firstActor !== null;
+  const actorResolved = firstActor === 'a' || firstActor === 'b';
   const steps = getFormatSteps(format, mapPool.length, firstActor, customSteps);
-
-  const bannedMaps: MapId[] = [];
-  const pickedMaps: PickedMap[] = [];
-  const usedMaps = new Set<MapId>();
-
-  const sortedActions = [...actions].sort((a, b) => {
-    if (a.stepIndex !== b.stepIndex) return a.stepIndex - b.stepIndex;
-    return a.confirmedAt.localeCompare(b.confirmedAt);
-  });
-
-  const seenStepIndices = new Set<number>();
-  let pendingPick: {
-    mapId: MapId;
-    pickedBy: Team;
-    pickStepIndex: number;
-  } | null = null;
-
-  for (const action of sortedActions) {
-    if (seenStepIndices.has(action.stepIndex)) continue;
-    seenStepIndices.add(action.stepIndex);
-
-    if (action.stepIndex >= steps.length) continue;
-
-    const step = steps[action.stepIndex];
-    if (!step) continue;
-
-    switch (action.type) {
-      case 'ban':
-        if (action.mapId && !usedMaps.has(action.mapId)) {
-          bannedMaps.push(action.mapId);
-          usedMaps.add(action.mapId);
-        }
-        break;
-      case 'pick':
-        if (action.mapId && !usedMaps.has(action.mapId)) {
-          pendingPick = {
-            mapId: action.mapId,
+  const state: VetoState = {
+    currentStepIndex: 0,
+    currentStep: null,
+    currentTeam: null,
+    currentActionType: null,
+    bannedMaps: [],
+    pickedMaps: [],
+    remainingMaps: [...mapPool],
+    deciderMap: null,
+    isComplete: false,
+    pendingPick: null,
+    acceptedActions: [],
+  };
+  // Replay only the contiguous valid prefix. Duplicates never count as steps.
+  const ordered = actions
+    .filter(
+      (action) =>
+        action &&
+        Number.isSafeInteger(action.stepIndex) &&
+        action.stepIndex >= 0 &&
+        typeof action.confirmedAt === 'string' &&
+        typeof action.id === 'string'
+    )
+    .sort(
+      (a, b) =>
+        a.stepIndex - b.stepIndex ||
+        (a.confirmedAt < b.confirmedAt
+          ? -1
+          : a.confirmedAt > b.confirmedAt
+            ? 1
+            : 0) ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    );
+  const usedIds = new Set<string>();
+  if (actorResolved) {
+    for (const action of ordered) {
+      if (action.stepIndex > state.currentStepIndex) break;
+      const step = steps[state.currentStepIndex];
+      if (usedIds.has(action.id) || !actionMatches(action, step, state))
+        continue;
+      usedIds.add(action.id);
+      state.acceptedActions.push(action);
+      if (action.type === 'ban' || action.type === 'pick') {
+        const mapId = action.mapId!;
+        state.remainingMaps = state.remainingMaps.filter(
+          (map) => map !== mapId
+        );
+        if (action.type === 'ban') state.bannedMaps.push(mapId);
+        else
+          state.pendingPick = {
+            mapId,
             pickedBy: action.team,
             pickStepIndex: action.stepIndex,
           };
-          usedMaps.add(action.mapId);
-        }
-        break;
-      case 'side':
-        if (pendingPick && action.side) {
-          pickedMaps.push({
-            mapId: pendingPick.mapId,
-            pickedBy: pendingPick.pickedBy,
-            side: action.side,
-            sidePickedBy: action.team,
-          });
-          pendingPick = null;
-        } else if (action.side && !pendingPick && action.mapId) {
-          // noop: decider side handled below
-        }
-        break;
+      } else if (!step.forDecider && state.pendingPick) {
+        state.pickedMaps.push({
+          mapId: state.pendingPick.mapId,
+          pickedBy: state.pendingPick.pickedBy,
+          side: action.side!,
+          sidePickedBy: action.team,
+        });
+        state.pendingPick = null;
+      }
+      state.currentStepIndex++;
     }
   }
-
-  const remainingMaps = mapPool.filter((m) => !usedMaps.has(m));
-  const currentStepIndex = sortedActions.filter((a) =>
-    seenStepIndices.has(a.stepIndex)
-  ).length;
-  const currentStep =
-    actorResolved && currentStepIndex < steps.length
-      ? steps[currentStepIndex]
-      : null;
-  const deciderMap = remainingMaps.length === 1 ? remainingMaps[0] : null;
-
-  const deciderSideAction = actions.find(
-    (a) => a.type === 'side' && steps[a.stepIndex]?.forDecider === true
-  );
-
-  const isComplete =
+  state.currentStep = actorResolved
+    ? (steps[state.currentStepIndex] ?? null)
+    : null;
+  state.currentTeam = state.currentStep?.team ?? null;
+  state.currentActionType = state.currentStep?.type ?? null;
+  state.deciderMap =
+    state.remainingMaps.length === 1 ? state.remainingMaps[0] : null;
+  state.isComplete =
     actorResolved &&
     steps.length > 0 &&
-    (currentStepIndex >= steps.length ||
-      (currentStepIndex === steps.length - 1 &&
-        currentStep?.type === 'side' &&
-        currentStep?.forDecider === true &&
-        deciderSideAction !== undefined));
-
-  return {
-    currentStepIndex,
-    currentStep,
-    currentTeam: currentStep?.team ?? null,
-    currentActionType: currentStep?.type ?? null,
-    bannedMaps,
-    pickedMaps,
-    remainingMaps,
-    deciderMap,
-    isComplete,
-    pendingPick,
-  };
+    state.currentStepIndex === steps.length;
+  return state;
 }
 
 export function validateAction(
@@ -308,13 +341,12 @@ export function validateAction(
   firstActor?: Team | null,
   customSteps?: VetoStep[]
 ): { valid: boolean; reason?: string } {
-  if (role === 'spectator') {
+  if (role !== 'a' && role !== 'b') {
     return { valid: false, reason: 'Spectators cannot take actions' };
   }
-  if (firstActor === undefined || firstActor === null) {
+  if (firstActor !== 'a' && firstActor !== 'b') {
     return { valid: false, reason: 'First actor has not been resolved' };
   }
-  const steps = getFormatSteps(format, mapPool.length, firstActor, customSteps);
   const state = deriveVetoState(
     format,
     mapPool,
@@ -322,64 +354,16 @@ export function validateAction(
     firstActor,
     customSteps
   );
-
-  if (role !== action.team) {
-    return {
-      valid: false,
-      reason: `Team ${role} cannot act for team ${action.team}`,
-    };
+  if (!action || role !== action.team) {
+    return { valid: false, reason: 'Cannot act for another team' };
   }
-
-  if (action.stepIndex !== state.currentStepIndex) {
-    return {
-      valid: false,
-      reason: `Expected step ${state.currentStepIndex}, got ${action.stepIndex}`,
-    };
+  if (actions.some((existing) => existing?.id === action.id)) {
+    return { valid: false, reason: 'Action already exists' };
   }
-
-  const step = steps[action.stepIndex];
-  if (!step) {
-    return { valid: false, reason: 'Step index out of bounds' };
-  }
-
-  if (action.team !== step.team) {
-    return {
-      valid: false,
-      reason: `Expected team ${step.team}, got ${action.team}`,
-    };
-  }
-
-  if (action.type !== step.type) {
-    return {
-      valid: false,
-      reason: `Expected action ${step.type}, got ${action.type}`,
-    };
-  }
-
-  if (action.type === 'ban' || action.type === 'pick') {
-    if (!action.mapId) {
-      return { valid: false, reason: 'Missing mapId for ban/pick' };
-    }
-    if (!state.remainingMaps.includes(action.mapId)) {
-      return {
+  return actionMatches(action, state.currentStep ?? undefined, state)
+    ? { valid: true }
+    : {
         valid: false,
-        reason: 'Map not available (already banned/picked)',
+        reason: 'Action does not match the current step or available map/side',
       };
-    }
-  }
-
-  if (action.type === 'side') {
-    if (!action.side) {
-      return { valid: false, reason: 'Missing side for side pick' };
-    }
-    if (step.forDecider) {
-      if (state.remainingMaps.length !== 1) {
-        return { valid: false, reason: 'Decider not determined yet' };
-      }
-    } else if (!state.pendingPick) {
-      return { valid: false, reason: 'No pending pick to assign side' };
-    }
-  }
-
-  return { valid: true };
 }

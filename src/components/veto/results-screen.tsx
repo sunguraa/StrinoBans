@@ -117,9 +117,9 @@ export function ResultsScreen({
       <div>
         <h2 className="font-serif text-2xl font-medium">Veto Complete</h2>
         {roomImportCode && (
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Room code:</span>
-            <code className="rounded bg-muted px-2 py-0.5 font-mono text-sm font-semibold">{roomImportCode}</code>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground">Preset Room Code:</span>
+            <code className="max-w-full break-all rounded bg-muted px-2 py-0.5 font-mono text-sm font-semibold">{roomImportCode}</code>
             <button
               type="button"
               onClick={copyRoomCode}

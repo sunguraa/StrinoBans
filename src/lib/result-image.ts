@@ -80,19 +80,28 @@ const PAD = 28;
 const ROW_H = 84;
 const ROW_GAP = 10;
 
+const ROOM_CODE_FONT = "600 13px 'SF Mono', ui-monospace, monospace";
+
 export async function renderVetoResultImage(data: ResultImageData): Promise<Blob> {
-  const headerH = data.roomImportCode ? 118 : 92;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2D context unavailable");
+  const codeText = data.roomImportCode ? `Preset Room Code: ${data.roomImportCode}` : "";
+  let codeColumns = 1;
+  if (codeText) {
+    ctx.font = ROOM_CODE_FONT;
+    codeColumns = Math.max(1, Math.floor((WIDTH - PAD * 2) / ctx.measureText("M").width));
+  }
+  const codeLines = Math.ceil(codeText.length / codeColumns);
+  const headerH = codeLines ? 100 + codeLines * 18 : 92;
   const bannedH = data.bannedNames.length > 0 ? 46 : 0;
   const footerH = 40;
   const bodyH = data.maps.length * ROW_H + Math.max(0, data.maps.length - 1) * ROW_GAP;
   const height = PAD + headerH + bodyH + bannedH + footerH + PAD;
 
   const dpr = 2;
-  const canvas = document.createElement("canvas");
   canvas.width = WIDTH * dpr;
   canvas.height = height * dpr;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context unavailable");
   ctx.scale(dpr, dpr);
 
   // Background
@@ -114,11 +123,13 @@ export async function renderVetoResultImage(data: ResultImageData): Promise<Blob
   ctx.font = "400 14px Inter, system-ui, sans-serif";
   ctx.fillText(`${data.formatLabel} · ${data.maps.length} map${data.maps.length === 1 ? "" : "s"} in play order`, PAD, PAD + 76);
 
-  // Room import code (if present)
+  // Preset Room Code (if present)
   if (data.roomImportCode) {
     ctx.fillStyle = COLORS.accent;
-    ctx.font = "600 13px 'SF Mono', ui-monospace, monospace";
-    ctx.fillText(`Room: ${data.roomImportCode}`, PAD, PAD + 98);
+    ctx.font = ROOM_CODE_FONT;
+    for (let start = 0, line = 0; start < codeText.length; start += codeColumns, line++) {
+      ctx.fillText(codeText.slice(start, start + codeColumns), PAD, PAD + 98 + line * 18);
+    }
   }
 
   // Map rows

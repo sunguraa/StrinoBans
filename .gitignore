@@ -44,6 +44,7 @@ next-env.d.ts
 # local dev flow
 .local/
 CLAUDE.md
+AGENTS.md
 SETUP.md
 research/
 

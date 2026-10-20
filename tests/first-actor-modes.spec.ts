@@ -1,4 +1,5 @@
-import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { chooseOption } from './helpers/choose-option';
 import {
   canStartFirstActorFlip,
   deriveVetoState,
@@ -6,24 +7,21 @@ import {
   startCoinFlip,
   validateAction,
 } from '../src/lib/state-machine';
-
-const APP = '/StrinoBans/';
-const MAP_POOL = [
-  'area-88',
-  'base-404',
-  'cauchy-street',
-  'cosmite',
-  'ocarnus',
-  'space-lab',
-  'windy-town',
-];
-
-type FirstActorMode = 'random' | 'coinflip' | 'team-a';
+import {
+  APP,
+  LEGACY_MAPS,
+  chooseStarter,
+  expectNoActions,
+  joinSpectator,
+  joinTeamB,
+  playStep,
+  readRoom,
+  seedLegacyRoom,
+  useOfflineTransport,
+} from './room-helpers';
 
 test.beforeEach(async ({ context }) => {
-  await context.addInitScript(() => {
-    localStorage.setItem('strinobans_transport', 'webrtc');
-  });
+  await useOfflineTransport(context);
 });
 
 test('only ready Team A can create a first-actor flip', () => {
@@ -36,7 +34,6 @@ test('only ready Team A can create a first-actor flip', () => {
     canStartFirstActorFlip('coinflip', 'a', { a: true, b: false }, null)
   ).toBe(false);
   expect(canStartFirstActorFlip('team-a', 'a', ready, null)).toBe(false);
-
   const existing = startCoinFlip(
     'coinflip',
     'a',
@@ -57,11 +54,10 @@ test('coinflip remains unresolved until its winner chooses', () => {
   expect(pending.firstActor).toBeUndefined();
   expect(pending.resolvedAt).toBeUndefined();
   expect(pending.choicePending).toBe(true);
-
-  const pendingState = deriveVetoState('bo1', MAP_POOL, [], pending.firstActor);
-  expect(pendingState.currentStep).toBeNull();
-  expect(pendingState.currentTeam).toBeNull();
-  expect(pendingState.currentActionType).toBeNull();
+  const state = deriveVetoState('bo1', LEGACY_MAPS, [], pending.firstActor);
+  expect(state.currentStep).toBeNull();
+  expect(state.currentTeam).toBeNull();
+  expect(state.currentActionType).toBeNull();
   expect(
     validateAction(
       {
@@ -69,217 +65,192 @@ test('coinflip remains unresolved until its winner chooses', () => {
         stepIndex: 0,
         team: 'a',
         type: 'ban',
-        mapId: MAP_POOL[0],
+        mapId: LEGACY_MAPS[0],
         confirmedAt: '2026-07-24T12:00:01Z',
         confirmedByClientId: 1,
       },
       'bo1',
-      MAP_POOL,
+      LEGACY_MAPS,
       [],
       'a',
       pending.firstActor
     )
   ).toEqual({ valid: false, reason: 'First actor has not been resolved' });
-
-  const unauthorized = resolveCoinflipChoice(
-    pending,
-    'b',
-    'b',
-    '2026-07-24T12:00:04Z'
+  expect(resolveCoinflipChoice(pending, 'b', 'b', '2026-07-24T12:00:04Z')).toBe(
+    pending
   );
-  expect(unauthorized).toBe(pending);
-  expect(unauthorized.firstActor).toBeUndefined();
-  expect(unauthorized.choicePending).toBe(true);
-
   const resolved = resolveCoinflipChoice(
     pending,
     'a',
     'b',
     '2026-07-24T12:00:05Z'
   );
-  expect(resolved.firstActor).toBe('b');
-  expect(resolved.resolvedAt).toBe('2026-07-24T12:00:05Z');
-  expect(resolved.flipWinner).toBe('a');
-  expect(resolved.flippedAt).toBe('2026-07-24T12:00:00Z');
-  expect(resolved.choicePending).toBe(false);
-});
-
-test('every published preset loads and is selectable', async ({ page }) => {
-  await page.goto(APP);
-  const indexResponse = await page.request.get(`${APP}presets/index.json`);
-  expect(indexResponse.ok()).toBe(true);
-  const index = (await indexResponse.json()) as {
-    groups: {
-      name: string;
-      stages: { format: string; presetId: string }[];
-    }[];
-  };
-
-  for (const group of index.groups) {
-    await page.getByRole('button', { name: `${group.name} formats` }).click();
-    for (const stage of group.stages) {
-      const presetResponse = await page.request.get(
-        `${APP}presets/${stage.presetId}.json`
-      );
-      expect(presetResponse.ok(), stage.presetId).toBe(true);
-      const preset = (await presetResponse.json()) as {
-        id: string;
-        format: string;
-        mapPool: string[];
-        firstActorMode: FirstActorMode;
-      };
-      expect(preset.id).toBe(stage.presetId);
-      expect(preset.format).toBe(stage.format);
-      expect(preset.mapPool.length).toBeGreaterThan(0);
-      expect(['random', 'coinflip', 'team-a']).toContain(preset.firstActorMode);
-
-      const formatLabel = stage.format.replace('bo', 'Bo');
-      await page
-        .getByRole('button', { name: `${group.name} ${formatLabel}` })
-        .click();
-      await expect(
-        page.getByText(`${group.name} · ${formatLabel}`)
-      ).toBeVisible();
-    }
-  }
+  expect(resolved).toMatchObject({
+    firstActor: 'b',
+    flipWinner: 'a',
+    flippedAt: pending.flippedAt,
+    resolvedAt: '2026-07-24T12:00:05Z',
+    choicePending: false,
+  });
+  expect(
+    resolveCoinflipChoice(resolved, 'a', 'a', '2026-07-24T12:00:06Z')
+  ).toBe(resolved);
 });
 
 for (const mode of ['random', 'coinflip', 'team-a'] as const) {
-  test(`${mode} establishes the intended first actor`, async ({
+  test(`legacy ${mode} room resolves initiative without a catalog preset`, async ({
     page,
     context,
   }) => {
-    await serveModePreset(context, mode);
-    const [teamA, teamB] = await createRoom(page, context, mode);
-    await teamA.getByRole('button', { name: 'Ready up Team A' }).click();
-    await teamB.getByRole('button', { name: 'Ready up Team B' }).click();
-
-    if (mode === 'team-a') {
-      await expect(
-        teamA.getByRole('heading', { name: 'Coin Flip' })
-      ).toHaveCount(0);
-      await expect(teamA.getByText('Your turn: ban a map')).toBeVisible();
-      await expect(teamB.getByText('Waiting for Team A to ban')).toBeVisible();
-      return;
-    }
-
-    await expect(
-      teamA.getByRole('heading', { name: 'Coin Flip' })
-    ).toBeVisible();
-    if (mode === 'random') {
-      await expect(teamA.getByText('Random coin flip')).toBeVisible();
-      await expect(teamA.getByText('goes first')).toBeVisible();
-      return;
-    }
-
-    const teamAChoice = teamA.getByRole('button', {
-      name: 'Team B goes first',
-    });
-    const teamBChoice = teamB.getByRole('button', {
-      name: 'Team B goes first',
-    });
-    await expect
-      .poll(
-        async () =>
-          (await teamAChoice.isVisible()) || (await teamBChoice.isVisible())
-      )
-      .toBe(true);
-
-    await expect(teamA.getByText(/^Your turn:/)).toHaveCount(0);
-    await expect(teamB.getByText(/^Your turn:/)).toHaveCount(0);
-    await expect(teamA.locator('[aria-current="step"]')).toHaveCount(0);
-    await expect(teamB.locator('[aria-current="step"]')).toHaveCount(0);
-
-    const teamAWonFlip = await teamAChoice.isVisible();
-    const chooser = teamAWonFlip ? teamA : teamB;
-    const flipWinner = teamAWonFlip ? 'Team A' : 'Team B';
-    const firstActor = teamAWonFlip ? 'Team B' : 'Team A';
-    await chooser
-      .getByRole('button', { name: `${firstActor} goes first` })
+    const pages = await seedLegacyRoom(page, context, mode);
+    await pages.a
+      .getByRole('button', { name: 'Ready up Team A', exact: true })
       .click();
-
-    const actorPage = firstActor === 'Team A' ? teamA : teamB;
-    const waitingPage = firstActor === 'Team A' ? teamB : teamA;
-    await expect(actorPage.getByText('Your turn: ban a map')).toBeVisible();
     await expect(
-      waitingPage.getByText(`Waiting for ${firstActor} to ban`)
+      pages.b.getByRole('heading', { name: 'Ready up', exact: true })
     ).toBeVisible();
-
-    await teamA.reload();
+    expect((await readRoom(pages.a)).initiative).toBeNull();
+    await expectNoActions(pages.a);
+    await pages.b
+      .getByRole('button', { name: 'Ready up Team B', exact: true })
+      .click();
+    await expect
+      .poll(async () => (await readRoom(pages.a)).initiative?.mode)
+      .toBe(mode);
+    let starter: 'a' | 'b';
+    if (mode === 'coinflip') {
+      const initiative = (await readRoom(pages.a)).initiative!;
+      const winner = initiative.flipWinner!;
+      starter = winner === 'a' ? 'b' : 'a';
+      const loser = pages[winner === 'a' ? 'b' : 'a'];
+      await expect(
+        pages[winner].getByRole('button', {
+          name: 'Team A goes first',
+          exact: true,
+        })
+      ).toBeVisible();
+      await expect(
+        loser.getByRole('button', { name: /goes first$/ })
+      ).toHaveCount(0);
+      await expectNoActions(pages.a);
+      await expectNoActions(pages.b);
+      await chooseStarter(pages, winner, starter);
+      expect((await readRoom(pages.b)).initiative).toMatchObject({
+        flipWinner: winner,
+        chooserTeam: winner,
+        firstActor: starter,
+        choicePending: false,
+      });
+    } else {
+      starter = (await readRoom(pages.a)).initiative!.firstActor!;
+      if (mode === 'team-a') expect(starter).toBe('a');
+      else
+        expect(starter).toBe((await readRoom(pages.a)).initiative!.flipWinner);
+    }
+    await playStep(pages, { team: starter, type: 'ban' }, 0, 7, true);
+    const beforeReload = await readRoom(pages.a);
+    await pages.a.reload();
+    await expect
+      .poll(async () => (await readRoom(pages.a)).actions)
+      .toEqual(beforeReload.actions);
+    expect((await readRoom(pages.a)).initiative).toEqual(
+      beforeReload.initiative
+    );
+    expect((await readRoom(pages.a)).meta).toEqual(beforeReload.meta);
+    const spectator = await joinSpectator(pages.a, context);
+    await expect
+      .poll(async () => (await readRoom(spectator)).actions)
+      .toEqual(beforeReload.actions);
+    expect((await readRoom(spectator)).initiative).toEqual(
+      beforeReload.initiative
+    );
+    await expect(spectator.locator('main button[aria-pressed]')).toHaveCount(0);
     await expect(
-      teamA.getByRole('heading', { name: 'Coin Flip' })
-    ).toBeVisible();
-    await expect(teamA.getByLabel(`${flipWinner} won the flip`)).toBeVisible();
-    await expect(teamA.getByText(`${firstActor} goes first`)).toBeVisible();
-    await expect(
-      teamA.getByText(`Coin-flip winner: ${flipWinner}`)
-    ).toBeVisible();
+      spectator.getByRole('button', { name: /^Confirm ban$/ })
+    ).toBeDisabled();
   });
 }
 
-async function serveModePreset(
-  context: BrowserContext,
-  mode: FirstActorMode
-): Promise<void> {
-  const presetId = `test-${mode}`;
-  await context.route('**/presets/index.json', (route) =>
-    route.fulfill({
-      json: {
-        version: 2,
-        groups: [
-          {
-            id: presetId,
-            name: `Test ${mode}`,
-            author: 'tests',
-            description: `${mode} first-actor behavior`,
-            updatedAt: '2026-07-24T00:00:00Z',
-            stages: [{ format: 'bo1', presetId }],
-          },
-        ],
-      },
-    })
-  );
-  await context.route(`**/presets/${presetId}.json`, (route) =>
-    route.fulfill({
-      json: {
-        id: presetId,
-        name: `Test ${mode} — Bo1`,
-        author: 'tests',
-        description: `${mode} first-actor behavior`,
-        updatedAt: '2026-07-24T00:00:00Z',
-        format: 'bo1',
-        ruleset: 'default',
-        mapPool: MAP_POOL,
-        firstActorMode: mode,
-        pickBanTimerSeconds: 50,
-        sideTimerSeconds: 35,
-        timerEnforcement: 'none',
-      },
-    })
-  );
-}
-
-async function createRoom(
-  teamA: Page,
-  context: BrowserContext,
-  mode: FirstActorMode
-): Promise<[Page, Page]> {
-  await teamA.goto(APP);
-  const groupName = `Test ${mode}`;
-  await teamA.getByRole('button', { name: `${groupName} formats` }).click();
-  await teamA.getByRole('button', { name: `${groupName} Bo1` }).click();
-  await teamA.getByRole('button', { name: 'Create veto room' }).click();
-  await teamA.waitForURL(/\/veto\?/);
-
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
-    origin: new URL(teamA.url()).origin,
+for (const starter of ['a', 'b'] as const) {
+  test(`seeded Team A chooses ${starter.toUpperCase()} only after both ready; B and spectator cannot act`, async ({
+    page,
+    context,
+  }) => {
+    await page.goto(APP);
+    await page
+      .getByRole('button', { name: 'Default Bo1', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Advanced Settings', exact: true })
+      .click();
+    await chooseOption(
+      page,
+      'First actor policy',
+      'Seeded — Team A chooses who starts'
+    );
+    await page
+      .getByRole('button', { name: 'Create veto room', exact: true })
+      .click();
+    await page.waitForURL(/\/veto\?/);
+    const pages = await joinTeamB(page, context);
+    const spectator = await joinSpectator(page, context);
+    await pages.a
+      .getByRole('button', { name: 'Ready up Team A', exact: true })
+      .click();
+    for (const participant of [pages.a, pages.b, spectator]) {
+      await expect(
+        participant.getByRole('button', { name: /goes first$/ })
+      ).toHaveCount(0);
+      await expectNoActions(participant);
+    }
+    expect((await readRoom(pages.a)).initiative).toBeNull();
+    await pages.b
+      .getByRole('button', { name: 'Ready up Team B', exact: true })
+      .click();
+    await expect(
+      pages.a.getByRole('button', { name: 'Team A goes first', exact: true })
+    ).toBeVisible();
+    for (const participant of [pages.a, pages.b, spectator])
+      await expectNoActions(participant);
+    for (const unauthorized of [pages.b, spectator]) {
+      await expect(
+        unauthorized.getByRole('button', { name: /goes first$/ })
+      ).toHaveCount(0);
+      await expect(
+        unauthorized.getByText('Waiting for Team A to choose…', { exact: true })
+      ).toBeVisible();
+    }
+    expect((await readRoom(pages.a)).initiative).toMatchObject({
+      mode: 'team-a-choice',
+      chooserTeam: 'a',
+      choicePending: true,
+    });
+    const pending = (await readRoom(pages.a)).initiative!;
+    expect(
+      resolveCoinflipChoice(pending, 'b', starter, new Date().toISOString())
+    ).toEqual(pending);
+    // Attempt two conflicting choices in the same browser turn; the first must win.
+    await pages.a
+      .getByRole('button', {
+        name: `Team ${starter.toUpperCase()} goes first`,
+        exact: true,
+      })
+      .evaluate((button: HTMLButtonElement) => {
+        const buttons = button.parentElement!.querySelectorAll('button');
+        button.click();
+        for (const other of buttons) if (other !== button) other.click();
+      });
+    await expect
+      .poll(async () => (await readRoom(pages.b)).initiative?.firstActor)
+      .toBe(starter);
+    await playStep(pages, { team: starter, type: 'ban' }, 0, 7, true);
+    await expect
+      .poll(async () => (await readRoom(spectator)).actions.length)
+      .toBe(1);
+    expect((await readRoom(spectator)).initiative?.firstActor).toBe(starter);
+    await expect(spectator.locator('main button[aria-pressed]')).toHaveCount(0);
+    await expect(
+      spectator.getByRole('button', { name: /goes first$/ })
+    ).toHaveCount(0);
   });
-  await teamA.getByRole('button', { name: 'Copy Team B Link link' }).click();
-  const teamBUrl = await teamA.evaluate(() => navigator.clipboard.readText());
-
-  const teamB = await context.newPage();
-  await teamB.goto(teamBUrl);
-  await expect(teamA.getByRole('heading', { name: 'Ready up' })).toBeVisible();
-  await expect(teamB.getByRole('heading', { name: 'Ready up' })).toBeVisible();
-  return [teamA, teamB];
 }

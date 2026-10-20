@@ -4,6 +4,7 @@ import {
   getFormatSteps,
   type ConfirmedAction,
   type FirstActorResult,
+  type VetoStep,
 } from '@/lib/state-machine';
 import { MAP_POOL } from '@/lib/maps';
 import type { Format, Team } from '@/types/veto';
@@ -16,12 +17,7 @@ interface SequenceTimelineProps {
   currentStepIndex: number;
   teamNames: Record<Team, string>;
   firstActorResult: FirstActorResult | null;
-  customSteps?: {
-    team: 'a' | 'b';
-    type: 'ban' | 'pick' | 'side';
-    forPickIndex?: number;
-    forDecider?: boolean;
-  }[];
+  customSteps?: VetoStep[];
   choicePending?: boolean;
 }
 
@@ -51,10 +47,10 @@ export function SequenceTimeline({
   const actionByStep = new Map(actions.map((a) => [a.stepIndex, a]));
   const mapName = (id?: string) =>
     MAP_POOL.find((m) => m.id === id)?.name ?? id ?? '—';
-  // Before the flip winner has chosen first mover, A/B don't map to real names yet
-  const displayNames: Record<Team, string> = choicePending
-    ? { a: 'Team A', b: 'Team B' }
-    : teamNames;
+  const displayNames: Record<Team, string> =
+    choicePending || !actorResolved
+      ? { a: 'First veto role', b: 'Second veto role' }
+      : teamNames;
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -71,7 +67,10 @@ export function SequenceTimeline({
           const action = actionByStep.get(index);
           const isCurrent = actorResolved && index === currentStepIndex;
           const done = action !== undefined && !isCurrent;
-          const teamName = step.team === 'a' ? displayNames.a : displayNames.b;
+          const teamName =
+            step.actor === 'upper-bracket'
+              ? teamNames.a
+              : displayNames[step.team];
           const detail = action
             ? step.type === 'side'
               ? action.side

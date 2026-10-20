@@ -1,382 +1,459 @@
-"use client";
+'use client';
 
 import {
-  joinRoom,
-  getRelaySockets,
-  type ActionSender,
-  type JsonValue,
-  type MqttRoomConfig,
+  joinRoom as joinMqttRoom,
+  defaultRelayUrls as mqttDefaults,
+  type JoinRoom,
+  type JoinRoomConfig,
+  type MessageAction,
   type Room,
-} from "@trystero-p2p/mqtt";
-import * as decoding from "lib0/decoding";
-import * as encoding from "lib0/encoding";
+} from '@trystero-p2p/mqtt';
+import {
+  joinRoom as joinNostrRoom,
+  defaultRelayUrls as nostrDefaults,
+} from '@trystero-p2p/nostr';
+import * as decoding from 'lib0/decoding';
+import * as encoding from 'lib0/encoding';
 import {
   Awareness,
   applyAwarenessUpdate,
   encodeAwarenessUpdate,
-  removeAwarenessStates,
-} from "y-protocols/awareness";
-import * as syncProtocol from "y-protocols/sync";
-import * as Y from "yjs";
-import type { CollabInitialSyncState, CollabProvider } from "./provider";
+} from 'y-protocols/awareness';
+import * as syncProtocol from 'y-protocols/sync';
+import * as Y from 'yjs';
+import type {
+  CollabInitialSyncState,
+  CollabProvider,
+  ConnectionStatus,
+} from './provider';
 
-const TRYSTERO_SYNC_ACTION = "yjs-sync";
-const TRYSTERO_AWARENESS_ACTION = "yjs-awareness-update";
-const DEFAULT_TRYSTERO_APP_ID = "strinobans-collab";
-const INITIAL_DISCOVERY_WINDOW_MS = 250;
-const REMOTE_SYNC_RESPONSE_TIMEOUT_MS = 1200;
-// A joiner pulls the doc with a one-shot syncStep1 on peer-join; over the internet
-// that first handshake can land before the data channel is ready (or be dropped),
-// leaving meta unsynced until a manual reload. Keep re-requesting until the remote
-// doc actually arrives.
-const RESYNC_INTERVAL_MS = 1500;
-const MAX_RESYNC_ATTEMPTS = 20;
+export const TRYSTERO_PROTOCOL_REVISION = 'yjs-v2';
+const DISCOVERY_TIMEOUT_MS = 20_000;
+const RESYNC_INTERVAL_MS = 5_000;
+type Strategy = 'mqtt' | 'nostr';
+type Channel = 'sync' | 'awareness';
 
-// Curated MQTT signaling brokers, shared verbatim by StrinoBans + StrinoPlant so both
-// clients always connect to the same set. shiftr.io is listed first because it runs on
-// 443 with embedded credentials — the only one that survives networks that block WSS on
-// non-standard ports (the rest sit on 8081/8084/8884, which mobile/corporate firewalls
-// often drop). Trystero tolerates dead brokers, so the others stay as same-network
-// fallbacks. Override with NEXT_PUBLIC_TRYSTERO_RELAY_URLS if needed.
-const DEFAULT_TRYSTERO_RELAY_URLS = [
-  "wss://public:public@public.cloud.shiftr.io",
-  "wss://broker.emqx.io:8084/mqtt",
-  "wss://broker.hivemq.com:8884/mqtt",
-  "wss://test.mosquitto.org:8081/mqtt",
-];
-
-interface AwarenessMetadataRecord {
-  clientIds?: number[];
+export function categorizeJoinError(error: string): string {
+  if (/password|decrypt|authentication/i.test(error))
+    return 'Room authentication failed. Check the room link.';
+  if (/handshake|admission/i.test(error))
+    return 'Peer admission failed. Retrying discovery.';
+  if (/timeout|timed out/i.test(error))
+    return 'Peer connection timed out. Retrying discovery.';
+  return 'A direct peer connection could not be established. Discovery is still running.';
 }
 
-// Flip on per-device with `?p2pdebug=1` in the URL or `localStorage.p2pdebug = "1"`.
-// Traces every P2P lifecycle stage so a failing handshake is visible across devices.
-function isDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    if (new URLSearchParams(window.location.search).get("p2pdebug") === "1") return true;
-    return window.localStorage.getItem("p2pdebug") === "1";
-  } catch {
-    return false;
-  }
+function relayUrls(value: string | undefined): string[] | undefined {
+  const urls = value?.split(/[\s,]+/).filter(Boolean);
+  return urls?.length ? [...new Set(urls)] : undefined;
 }
 
-function debugLog(...args: unknown[]): void {
-  if (isDebugEnabled()) console.log("[StrinoBans P2P]", ...args);
-}
-
-const WS_STATE = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
-
-// Reports which signaling brokers actually have an open socket on THIS device — the
-// difference between "no broker reachable on this network" and "connected but no peer".
-function logBrokerStatus(label: string): void {
-  if (!isDebugEnabled()) return;
-  try {
-    const sockets = getRelaySockets() as Record<string, { readyState?: number } | undefined>;
-    const entries = Object.entries(sockets);
-    if (entries.length === 0) {
-      debugLog(label, "broker sockets: (none registered)");
-      return;
-    }
-    const status = entries.map(
-      ([url, s]) => `${url} -> ${WS_STATE[s?.readyState ?? -1] ?? `state ${s?.readyState}`}`,
-    );
-    debugLog(label, "broker sockets:\n" + status.join("\n"));
-  } catch (error) {
-    debugLog(label, "getRelaySockets failed", error);
-  }
-}
-
-function splitRelayUrls(value: string | undefined): string[] | undefined {
-  const urls = value
-    ?.split(/[\s,]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  return urls && urls.length > 0 ? urls : undefined;
-}
-
-function buildTrysteroConfig(): MqttRoomConfig {
-  const envRelays = splitRelayUrls(process.env.NEXT_PUBLIC_TRYSTERO_RELAY_URLS);
-  const password = process.env.NEXT_PUBLIC_TRYSTERO_PASSWORD?.trim() || undefined;
-
+export function buildTrysteroConfig(strategy: Strategy): JoinRoomConfig {
+  const overrides =
+    strategy === 'mqtt'
+      ? (process.env.NEXT_PUBLIC_TRYSTERO_MQTT_RELAY_URLS ??
+        process.env.NEXT_PUBLIC_TRYSTERO_RELAY_URLS)
+      : process.env.NEXT_PUBLIC_TRYSTERO_NOSTR_RELAY_URLS;
+  // Fixed overlapping discovery sets, never device-specific/random profile selection.
+  // The Nostr endpoints are maintained upstream defaults, all on standard WSS 443.
+  const urls =
+    relayUrls(overrides) ??
+    (strategy === 'mqtt'
+      ? mqttDefaults
+      : nostrDefaults.filter((url) =>
+          [
+            'wss://cdn.satellite.earth',
+            'wss://nos.lol',
+            'wss://nostr.chaima.info',
+          ].includes(url)
+        ));
   return {
-    appId: process.env.NEXT_PUBLIC_TRYSTERO_APP_ID?.trim() || DEFAULT_TRYSTERO_APP_ID,
-    password,
-    relayUrls: envRelays ?? DEFAULT_TRYSTERO_RELAY_URLS,
+    appId: `${process.env.NEXT_PUBLIC_TRYSTERO_APP_ID?.trim() || 'strinobans-collab'}:${TRYSTERO_PROTOCOL_REVISION}`,
+    password: process.env.NEXT_PUBLIC_TRYSTERO_PASSWORD?.trim() || undefined,
+    relayConfig: { urls, redundancy: urls.length, warnOnRelayFailure: false },
   };
 }
 
-function encodeSyncStep1Message(doc: Y.Doc): Uint8Array {
-  const encoder = encoding.createEncoder();
-  syncProtocol.writeSyncStep1(encoder, doc);
-  return encoding.toUint8Array(encoder);
+interface RoomSubscriber {
+  message(
+    channel: Channel,
+    payload: Uint8Array,
+    peerId: string,
+    origin: SharedRoom
+  ): void;
+  peersChanged(): void;
+  error(message: string): void;
 }
 
-function encodeSyncUpdateMessage(update: Uint8Array): Uint8Array {
-  const encoder = encoding.createEncoder();
-  syncProtocol.writeUpdate(encoder, update);
-  return encoding.toUint8Array(encoder);
+// Trystero caches one Room per app/room. Multiplex callbacks/actions so concurrent
+// consumers and React StrictMode cannot overwrite handlers or leave a sibling's room.
+class SharedRoom {
+  readonly subscribers = new Set<RoomSubscriber>();
+  private room: Room | null = null;
+  private actions: Partial<Record<Channel, MessageAction<Uint8Array>>> = {};
+
+  constructor(
+    private readonly join: JoinRoom,
+    private readonly config: JoinRoomConfig,
+    private readonly name: string
+  ) {}
+
+  start(): void {
+    try {
+      this.room = this.join(this.config, this.name, {
+        onJoinError: ({ error }) => this.report(categorizeJoinError(error)),
+      });
+      for (const channel of ['sync', 'awareness'] as const) {
+        this.actions[channel] = this.room.makeAction<Uint8Array>(
+          `yjs-${channel}`,
+          {
+            onMessage: (payload, { peerId }) => {
+              for (const subscriber of this.subscribers)
+                subscriber.message(channel, payload, peerId, this);
+            },
+          }
+        );
+      }
+      this.room.onPeerJoin = this.room.onPeerLeave = () => {
+        for (const subscriber of this.subscribers) subscriber.peersChanged();
+      };
+    } catch {
+      this.report('Discovery could not start. Retry to reconnect.');
+    }
+  }
+
+  peers(): string[] {
+    // Upstream 0.26 excludes pending/failed handshakes from getPeers().
+    return this.room ? Object.keys(this.room.getPeers()) : [];
+  }
+
+  send(
+    channel: Channel,
+    payload: Uint8Array,
+    sender: RoomSubscriber,
+    target?: string
+  ): void {
+    const action = this.actions[channel];
+    if (action)
+      void action.send(payload, { target }).catch(() => {
+        this.report(
+          'A peer send failed. Synchronization will retry automatically.'
+        );
+      });
+    // Separate local docs sharing the same upstream Room must synchronize too.
+    if (!target) {
+      for (const subscriber of this.subscribers) {
+        if (subscriber !== sender)
+          subscriber.message(channel, payload, 'local', this);
+      }
+    }
+  }
+
+  retry(): void {
+    if (this.peers().length > 0) return;
+    this.stop();
+    this.start();
+  }
+
+  ensureStarted(): void {
+    if (!this.room) this.start();
+  }
+
+  stop(): void {
+    const room = this.room;
+    this.room = null;
+    this.actions = {};
+    if (room) {
+      room.onPeerJoin = room.onPeerLeave = null;
+      // leave releases upstream's occupied-room cache synchronously, before awaiting.
+      void room.leave().catch(() => undefined);
+    }
+  }
+
+  private report(message: string): void {
+    for (const subscriber of this.subscribers) subscriber.error(message);
+  }
 }
 
-function getMetadataClientIds(metadata: JsonValue | undefined): number[] {
-  if (!metadata || Array.isArray(metadata) || typeof metadata !== "object") return [];
-  const { clientIds } = metadata as AwarenessMetadataRecord;
-  if (!Array.isArray(clientIds)) return [];
-  return clientIds.filter((clientId): clientId is number => typeof clientId === "number");
+const sharedRooms = new Map<string, SharedRoom>();
+
+export interface TrysteroProviderOptions {
+  // Inject real local strategies or in-memory controlled rooms without public probes.
+  joins?: Record<Strategy, JoinRoom>;
+  configs?: Record<Strategy, JoinRoomConfig>;
+  discoveryTimeoutMs?: number;
+  resyncIntervalMs?: number;
 }
 
-class TrysteroCollabProvider implements CollabProvider {
-  readonly transport = "trystero" as const;
+export class TrysteroCollabProvider implements CollabProvider, RoomSubscriber {
+  readonly transport = 'trystero' as const;
   readonly awareness: Awareness;
-
-  private readonly doc: Y.Doc;
-  private readonly room: Room;
-  private readonly peerIds = new Set<string>();
-  private readonly peerClientIds = new Map<string, Set<number>>();
-  private readonly sendSyncMessage: ActionSender<Uint8Array>;
-  private readonly sendAwarenessUpdate: ActionSender<Uint8Array>;
+  private readonly paths: { key: string; room: SharedRoom }[] = [];
+  private readonly listeners = new Set<(status: ConnectionStatus) => void>();
+  private readonly syncedPeers = new Set<string>();
   private readonly initialSyncPromise: Promise<CollabInitialSyncState>;
-
   private resolveInitialSync!: (state: CollabInitialSyncState) => void;
-  private discoveryTimer: ReturnType<typeof setTimeout> | null = null;
-  private syncTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
-  private resyncTimer: ReturnType<typeof setInterval> | null = null;
-  private resyncAttempts = 0;
-  private discoveryComplete = false;
   private initialSyncResolved = false;
   private didReceiveRemoteDoc = false;
   private destroyed = false;
+  private timedOut = false;
+  private lastError: string | undefined;
+  private status: ConnectionStatus = { phase: 'discovering', peerCount: 0 };
+  private deadline: ReturnType<typeof setTimeout> | undefined;
+  private readonly resyncTimer: ReturnType<typeof setInterval>;
+  private readonly timeoutMs: number;
 
-  constructor(roomName: string, doc: Y.Doc) {
-    this.doc = doc;
+  constructor(
+    roomName: string,
+    private readonly doc: Y.Doc,
+    options: TrysteroProviderOptions = {}
+  ) {
     this.awareness = new Awareness(doc);
-    const config = buildTrysteroConfig();
-    debugLog("joining room", {
-      roomName,
-      appId: config.appId,
-      relayUrls: config.relayUrls ?? "(library defaults)",
-      clientId: doc.clientID,
-    });
-    this.room = joinRoom(config, roomName);
-
-    if (isDebugEnabled()) {
-      setTimeout(() => logBrokerStatus("@2s"), 2000);
-      setTimeout(() => logBrokerStatus("@6s"), 6000);
-    }
-
-    const [sendSyncMessage, receiveSyncMessage] =
-      this.room.makeAction<Uint8Array>(TRYSTERO_SYNC_ACTION);
-    const [sendAwarenessUpdate, receiveAwarenessUpdate] =
-      this.room.makeAction<Uint8Array>(TRYSTERO_AWARENESS_ACTION);
-
-    this.sendSyncMessage = sendSyncMessage;
-    this.sendAwarenessUpdate = sendAwarenessUpdate;
-
+    this.timeoutMs = options.discoveryTimeoutMs ?? DISCOVERY_TIMEOUT_MS;
     this.initialSyncPromise = new Promise<CollabInitialSyncState>((resolve) => {
       this.resolveInitialSync = resolve;
     });
-
-    receiveSyncMessage((payload, peerId) => {
-      this.handleSyncMessage(payload, peerId);
-    });
-    receiveAwarenessUpdate((payload, peerId, metadata) => {
-      this.handleAwarenessUpdate(payload, peerId, metadata);
-    });
-
-    this.room.onPeerJoin(this.handlePeerJoin);
-    this.room.onPeerLeave(this.handlePeerLeave);
-    this.doc.on("update", this.handleLocalDocUpdate);
-    this.awareness.on("update", this.handleLocalAwarenessUpdate);
-
-    this.discoveryTimer = setTimeout(() => {
-      this.discoveryTimer = null;
-      this.discoveryComplete = true;
-
-      if (this.didReceiveRemoteDoc) {
-        this.finishInitialSync(false);
-        return;
+    this.doc.on('update', this.handleDocUpdate);
+    this.awareness.on('update', this.handleAwarenessUpdate);
+    for (const strategy of ['mqtt', 'nostr'] as const) {
+      const config =
+        options.configs?.[strategy] ?? buildTrysteroConfig(strategy);
+      const join =
+        options.joins?.[strategy] ??
+        (strategy === 'mqtt' ? joinMqttRoom : joinNostrRoom);
+      const key = JSON.stringify([strategy, config, roomName]);
+      let room = sharedRooms.get(key);
+      const fresh = !room;
+      if (!room) {
+        room = new SharedRoom(join, config, roomName);
+        sharedRooms.set(key, room);
       }
-      if (this.peerIds.size === 0) {
-        this.finishInitialSync(true);
-        return;
-      }
-      this.syncTimeoutTimer = setTimeout(() => {
-        this.syncTimeoutTimer = null;
-        this.finishInitialSync(false);
-      }, REMOTE_SYNC_RESPONSE_TIMEOUT_MS);
-    }, INITIAL_DISCOVERY_WINDOW_MS);
-
-    this.resyncTimer = setInterval(() => {
-      if (this.destroyed || this.didReceiveRemoteDoc) {
-        this.stopResync();
-        return;
-      }
-      this.resyncAttempts += 1;
-      if (this.resyncAttempts > MAX_RESYNC_ATTEMPTS) {
-        debugLog("resync GAVE UP after", MAX_RESYNC_ATTEMPTS, "attempts — no remote doc; peers:", this.peerIds.size);
-        this.stopResync();
-        return;
-      }
-      debugLog("resync attempt", this.resyncAttempts, "-> re-requesting from", this.peerIds.size, "peer(s)");
-      this.peerIds.forEach((peerId) => this.sendSyncStep1(peerId));
-    }, RESYNC_INTERVAL_MS);
-  }
-
-  private stopResync(): void {
-    if (this.resyncTimer) {
-      clearInterval(this.resyncTimer);
-      this.resyncTimer = null;
+      this.paths.push({ key, room });
+      room.subscribers.add(this);
+      if (fresh) room.start();
     }
+    this.armDeadline();
+    this.peersChanged();
+    // Never stop discovery or anti-entropy after initial sync: late peers and route
+    // recovery must merge the same doc, including peers reachable only through a bridge.
+    this.resyncTimer = setInterval(
+      () => this.requestSync(),
+      options.resyncIntervalMs ?? RESYNC_INTERVAL_MS
+    );
   }
 
-  destroy(): void {
-    if (this.destroyed) return;
-    this.destroyed = true;
-    this.clearLocalAwareness();
-    this.clearTimers();
-    this.stopResync();
-    this.finishInitialSync(false);
-    this.doc.off("update", this.handleLocalDocUpdate);
-    this.awareness.off("update", this.handleLocalAwarenessUpdate);
-    this.peerIds.clear();
-    this.peerClientIds.clear();
-    void this.room.leave().catch(() => undefined);
+  getStatus(): ConnectionStatus {
+    return { ...this.status };
+  }
+
+  subscribeStatus(listener: (status: ConnectionStatus) => void): () => void {
+    this.listeners.add(listener);
+    listener(this.getStatus());
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   waitForInitialSync(): Promise<CollabInitialSyncState> {
     return this.initialSyncPromise;
   }
 
-  private finishInitialSync(shouldSeedLocal: boolean): void {
-    if (this.initialSyncResolved) return;
-    this.initialSyncResolved = true;
-    this.clearTimers();
-    debugLog("initial sync RESOLVED", {
-      shouldSeedLocal,
-      discoveredPeerCount: this.peerIds.size,
-      didReceiveRemoteDoc: this.didReceiveRemoteDoc,
-    });
-    this.resolveInitialSync({
-      shouldSeedLocal,
-      discoveredPeerCount: this.peerIds.size,
-      didReceiveRemoteDoc: this.didReceiveRemoteDoc,
-    });
-  }
-
-  private clearTimers(): void {
-    if (this.discoveryTimer) {
-      clearTimeout(this.discoveryTimer);
-      this.discoveryTimer = null;
-    }
-    if (this.syncTimeoutTimer) {
-      clearTimeout(this.syncTimeoutTimer);
-      this.syncTimeoutTimer = null;
-    }
-  }
-
-  private clearLocalAwareness(): void {
-    if (this.awareness.getLocalState() !== null) {
-      this.awareness.setLocalState(null);
-    }
-  }
-
-  private rememberPeerClientIds(peerId: string, clientIds: number[]): void {
-    if (clientIds.length === 0) return;
-    const peerClients = this.peerClientIds.get(peerId) ?? new Set<number>();
-    clientIds.forEach((clientId) => peerClients.add(clientId));
-    this.peerClientIds.set(peerId, peerClients);
-  }
-
-  private sendSyncStep1(peerId: string): void {
-    void this.sendSyncMessage(encodeSyncStep1Message(this.doc), peerId).catch(() => undefined);
-  }
-
-  private sendLocalAwareness(peerId: string | null = null): void {
-    const localState = this.awareness.getLocalState();
-    if (!localState || typeof localState !== "object" || !("user" in localState)) return;
-    const clientIds = [this.awareness.clientID];
-    void this.sendAwarenessUpdate(encodeAwarenessUpdate(this.awareness, clientIds), peerId, {
-      clientIds,
-    }).catch(() => undefined);
-  }
-
-  private readonly handlePeerJoin = (peerId: string) => {
+  retry(): void {
     if (this.destroyed) return;
-    this.peerIds.add(peerId);
-    debugLog("peer JOINED", peerId, "total peers:", this.peerIds.size);
-    this.sendSyncStep1(peerId);
-    this.sendLocalAwareness(peerId);
-  };
-
-  private readonly handlePeerLeave = (peerId: string) => {
-    debugLog("peer LEFT", peerId, "remaining peers:", this.peerIds.size - 1);
-    this.peerIds.delete(peerId);
-    const clientIds = this.peerClientIds.get(peerId);
-    if (clientIds && clientIds.size > 0) {
-      removeAwarenessStates(this.awareness, Array.from(clientIds), this);
-    }
-    this.peerClientIds.delete(peerId);
-    if (!this.initialSyncResolved && this.discoveryComplete && this.peerIds.size === 0) {
-      this.finishInitialSync(true);
-    }
-  };
-
-  private readonly handleLocalDocUpdate = (update: Uint8Array, origin: unknown) => {
-    if (this.destroyed || origin === this) return;
-    void this.sendSyncMessage(encodeSyncUpdateMessage(update)).catch(() => undefined);
-  };
-
-  private readonly handleLocalAwarenessUpdate = (
-    event: { added: number[]; updated: number[]; removed: number[] },
-    origin: unknown,
-  ) => {
-    if (this.destroyed || origin === this) return;
-    const changedClients = [...event.added, ...event.updated, ...event.removed].filter(
-      (clientId) => clientId === this.awareness.clientID,
-    );
-    if (changedClients.length === 0) return;
-    void this.sendAwarenessUpdate(encodeAwarenessUpdate(this.awareness, changedClients), null, {
-      clientIds: changedClients,
-    }).catch(() => undefined);
-  };
-
-  private handleSyncMessage(payload: Uint8Array, peerId: string): void {
-    if (this.destroyed) return;
-    this.peerIds.add(peerId);
-    const decoder = decoding.createDecoder(payload);
-    const replyEncoder = encoding.createEncoder();
-    try {
-      const messageType = syncProtocol.readSyncMessage(decoder, replyEncoder, this.doc, this);
-      debugLog("sync message received from", peerId, "type:", messageType, "bytes:", payload.byteLength);
-      if (
-        messageType === syncProtocol.messageYjsSyncStep2 ||
-        messageType === syncProtocol.messageYjsUpdate
-      ) {
-        this.didReceiveRemoteDoc = true;
-        debugLog("remote doc RECEIVED — full state synced");
-        this.stopResync();
-        this.finishInitialSync(false);
-      }
-      const reply = encoding.toUint8Array(replyEncoder);
-      if (reply.byteLength > 0) {
-        void this.sendSyncMessage(reply, peerId).catch(() => undefined);
-      }
-    } catch (error) {
-      console.error("[StrinoBans] Failed to read Trystero Yjs sync message", error);
-    }
+    this.timedOut = false;
+    this.lastError = undefined;
+    for (const { room } of this.paths) room.retry();
+    this.armDeadline();
+    this.peersChanged();
   }
 
-  private handleAwarenessUpdate(
+  destroy(): void {
+    if (this.destroyed) return;
+    this.awareness.setLocalState(null);
+    this.destroyed = true;
+    clearTimeout(this.deadline);
+    clearInterval(this.resyncTimer);
+    this.doc.off('update', this.handleDocUpdate);
+    this.awareness.off('update', this.handleAwarenessUpdate);
+    this.awareness.destroy();
+    this.finishInitialSync();
+    for (const { key, room } of this.paths) {
+      room.subscribers.delete(this);
+      if (!room.subscribers.size) {
+        sharedRooms.delete(key);
+        room.stop();
+      }
+    }
+    this.status = { phase: 'disconnected', peerCount: 0 };
+    for (const listener of this.listeners) listener(this.getStatus());
+    this.listeners.clear();
+  }
+
+  peersChanged(): void {
+    if (this.destroyed) return;
+    const peers = this.peerIds();
+    for (const id of this.syncedPeers)
+      if (!peers.has(id)) this.syncedPeers.delete(id);
+    if (this.status.phase === 'connected' && peers.size === 0) {
+      this.timedOut = false;
+      this.lastError = undefined;
+      this.armDeadline();
+    }
+    // Do not remove awareness on one route's leave. Clocked awareness expiry or
+    // an explicit owner tombstone handles actual departure without flickering.
+    this.updateStatus();
+    this.requestSync();
+  }
+
+  error(message: string): void {
+    this.lastError = message;
+    this.updateStatus();
+  }
+
+  message(
+    channel: Channel,
     payload: Uint8Array,
     peerId: string,
-    metadata: JsonValue | undefined,
+    origin: SharedRoom
   ): void {
-    this.peerIds.add(peerId);
-    this.rememberPeerClientIds(peerId, getMetadataClientIds(metadata));
-    applyAwarenessUpdate(this.awareness, payload, this);
+    if (this.destroyed) return;
+    try {
+      if (channel === 'awareness') {
+        applyAwarenessUpdate(this.awareness, payload, origin);
+        return;
+      }
+      const reply = encoding.createEncoder();
+      const type = syncProtocol.readSyncMessage(
+        decoding.createDecoder(payload),
+        reply,
+        this.doc,
+        origin
+      );
+      if (
+        type === syncProtocol.messageYjsSyncStep2 &&
+        peerId !== 'local' &&
+        this.peerIds().has(peerId)
+      ) {
+        clearTimeout(this.deadline);
+        this.timedOut = false;
+        this.didReceiveRemoteDoc = true;
+        this.syncedPeers.add(peerId);
+        this.finishInitialSync();
+        this.updateStatus();
+      }
+      if (encoding.length(reply))
+        origin.send(
+          'sync',
+          encoding.toUint8Array(reply),
+          this,
+          peerId === 'local' ? undefined : peerId
+        );
+    } catch {
+      this.error(
+        'A peer sent an invalid synchronization message. Waiting for a valid sync.'
+      );
+    }
   }
+
+  private peerIds(): Set<string> {
+    return new Set(this.paths.flatMap(({ room }) => room.peers()));
+  }
+
+  private updateStatus(): void {
+    if (this.destroyed) return;
+    const peers = this.peerIds();
+    const connected = [...peers].some((id) => this.syncedPeers.has(id));
+    const next: ConnectionStatus = {
+      phase: connected
+        ? 'connected'
+        : this.timedOut
+          ? 'error'
+          : peers.size
+            ? 'syncing'
+            : this.lastError
+              ? 'connecting'
+              : 'discovering',
+      peerCount: peers.size,
+      message: connected
+        ? undefined
+        : (this.lastError ??
+          (this.timedOut
+            ? 'No synchronized peer yet. Discovery continues; retry or check that the other player has this room open.'
+            : undefined)),
+    };
+    if (
+      next.phase === this.status.phase &&
+      next.peerCount === this.status.peerCount &&
+      next.message === this.status.message
+    )
+      return;
+    this.status = next;
+    for (const listener of this.listeners) listener(this.getStatus());
+  }
+
+  private armDeadline(): void {
+    clearTimeout(this.deadline);
+    this.deadline = setTimeout(() => {
+      this.timedOut = true;
+      this.finishInitialSync();
+      this.updateStatus();
+    }, this.timeoutMs);
+  }
+
+  private finishInitialSync(): void {
+    if (this.initialSyncResolved) return;
+    this.initialSyncResolved = true;
+    // Transport completion never authorizes room creation or implies validated meta.
+    this.resolveInitialSync({
+      shouldSeedLocal: false,
+      discoveredPeerCount: this.peerIds().size,
+      didReceiveRemoteDoc: this.didReceiveRemoteDoc,
+    });
+  }
+
+  private requestSync(): void {
+    if (this.destroyed) return;
+    const encoder = encoding.createEncoder();
+    syncProtocol.writeSyncStep1(encoder, this.doc);
+    const message = encoding.toUint8Array(encoder);
+    const clients = [...this.awareness.getStates().keys()];
+    for (const { room } of this.paths) {
+      room.ensureStarted();
+      room.send('sync', message, this);
+      if (clients.length)
+        room.send(
+          'awareness',
+          encodeAwarenessUpdate(this.awareness, clients),
+          this
+        );
+    }
+  }
+
+  private readonly handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+    const encoder = encoding.createEncoder();
+    syncProtocol.writeUpdate(encoder, update);
+    const message = encoding.toUint8Array(encoder);
+    // Bridge different reachable paths. Yjs only emits an update for new structs,
+    // so duplicate delivery over both routes cannot duplicate logical actions.
+    for (const { room } of this.paths)
+      if (room !== origin) room.send('sync', message, this);
+  };
+
+  private readonly handleAwarenessUpdate = (
+    event: { added: number[]; updated: number[]; removed: number[] },
+    origin: unknown
+  ) => {
+    const clients = [...event.added, ...event.updated, ...event.removed];
+    const message = encodeAwarenessUpdate(this.awareness, clients);
+    for (const { room } of this.paths)
+      if (room !== origin) room.send('awareness', message, this);
+  };
 }
 
-export function createTrysteroTransportProvider(roomName: string, doc: Y.Doc): CollabProvider {
-  return new TrysteroCollabProvider(roomName, doc);
+export function createTrysteroTransportProvider(
+  roomName: string,
+  doc: Y.Doc,
+  options?: TrysteroProviderOptions
+): CollabProvider {
+  return new TrysteroCollabProvider(roomName, doc, options);
 }

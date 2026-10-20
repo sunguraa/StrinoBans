@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "id": "grand-final-bo5",
+  "name": "Grand final — BO5",
+  "author": "sunguraa",
+  "description": "BO5 only. The upper-bracket finalist (Team A) gets both bans as its reward for coming from the winners bracket.",
+  "updatedAt": "2026-10-19T00:00:00Z",
+  "format": "bo5",
+  "ruleset": "grand-final",
+  "sequencePattern": "manual",
+  "mapPool": [
+    "area-88",
+    "base-404",
+    "cauchy-street",
+    "space-lab",
+    "windy-town",
+    "ocarnus",
+    "le-brun-city"
+  ],
+  "firstActorMode": "upper-bracket-choice",
+  "steps": [
+    {
+      "team": "a",
+      "type": "ban",
+      "actor": "upper-bracket"
+    },
+    {
+      "team": "a",
+      "type": "ban",
+      "actor": "upper-bracket"
+    },
+    {
+      "team": "a",
+      "type": "pick"
+    },
+    {
+      "team": "b",
+      "type": "side",
+      "forPickIndex": 0
+    },
+    {
+      "team": "b",
+      "type": "pick"
+    },
+    {
+      "team": "a",
+      "type": "side",
+      "forPickIndex": 1
+    },
+    {
+      "team": "a",
+      "type": "pick"
+    },
+    {
+      "team": "b",
+      "type": "side",
+      "forPickIndex": 2
+    },
+    {
+      "team": "b",
+      "type": "pick"
+    },
+    {
+      "team": "a",
+      "type": "side",
+      "forPickIndex": 3
+    },
+    {
+      "team": "b",
+      "type": "side",
+      "forDecider": true
+    }
+  ],
+  "pickBanTimerSeconds": 50,
+  "sideTimerSeconds": 35,
+  "timerEnforcement": "random-after-timeout",
+  "notes": "Team A is the upper-bracket finalist and chooses its veto role. Both opening bans stay with Team A; role B chooses decider side. No verified game import code supplied."
+}

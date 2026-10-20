@@ -1,4 +1,6 @@
 import type { FirstActorMode } from '@/types/veto';
+import type { VetoStep } from '@/lib/state-machine';
+import type { SequencePattern } from '@/lib/preset-rules';
 
 export interface PresetMeta {
   id: string;
@@ -11,14 +13,11 @@ export interface PresetMeta {
 }
 
 export interface VetoPreset extends PresetMeta {
+  schemaVersion?: 1;
+  sequencePattern?: SequencePattern;
   mapPool: string[];
   firstActorMode: FirstActorMode;
-  steps?: {
-    team: 'a' | 'b';
-    type: 'ban' | 'pick' | 'side';
-    forPickIndex?: number;
-    forDecider?: boolean;
-  }[];
+  steps?: VetoStep[];
   pickBanTimerSeconds?: number | null;
   sideTimerSeconds?: number | null;
   timerEnforcement?: 'none' | 'random-after-timeout';
